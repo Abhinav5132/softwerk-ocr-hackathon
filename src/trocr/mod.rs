@@ -10,6 +10,7 @@ use std::io::Write;
 use crate::{trocr::config_structs::ModelConfig};
 pub mod config_structs;
 pub mod image_processor;
+pub mod line_segementation;
 
 pub struct TrocrSwedishHandwritten{
     encoder_config: vit::Config,
@@ -83,6 +84,7 @@ impl TrocrSwedishHandwritten {
         let image = preprocessor.preprocess(images, device, dtype)?.to_device(device)?;
 
         let encoder = self.model.encoder().forward(&image)?;
+        self.model.reset_kv_cache();
 
         let mut logits_processor = generation::LogitsProcessor::new(1337, None, None);
 
@@ -99,7 +101,7 @@ impl TrocrSwedishHandwritten {
 
         /*This iterates to 200 and force stops if an EOS token is never hit. 
         we shouldnt have more thatn 200 tokens per line of text so this limit is still overkill */
-        for index in 0..200{
+        for index in 0..1000{
             let context_size = if index >= 1 {1} else {
                 token_ids.len()
             };
@@ -110,13 +112,24 @@ impl TrocrSwedishHandwritten {
 
             let logits = logits.squeeze(0)?;
             let logits = logits.get(logits.dim(0)? - 1)?;
+            let mut logits_vec = logits.to_vec1::<f32>()?;
+            if index == 0 {
+                let mut top: Vec<(usize, f32)> = logits_vec.iter().copied().enumerate().collect();
+                top.sort_by(|a, b| b.1.total_cmp(&a.1));
+                println!("Step 0 top-5 logits: {:?}", &top[..5]);
+            }
+            if index >= 1 {
+                // Avoid getting stuck in special-token loops once decoding has started.
+                logits_vec[self.decoder_config.bos_token_id] = f32::NEG_INFINITY;
+                logits_vec[self.decoder_config.pad_token_id] = f32::NEG_INFINITY;
+            }
+            let logits = Tensor::from_vec(logits_vec, self.decoder_config.vocab_size, device)?;
             let token = logits_processor.sample(&logits)?;
-            println!("Token: {token}");
             token_ids.push(token);
             
 
             if let Some(t) =  tokenizer.next_token(token)?{
-                println!("{t}");
+                print!("{t}");
                 let _ = std::io::stdout().flush();
             }
 
@@ -150,4 +163,3 @@ impl TrocrSwedishHandwritten {
         Ok(model_config)
     }
 }
-

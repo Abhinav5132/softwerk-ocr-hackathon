@@ -72,7 +72,7 @@ fn main() {
     let device = select_device();
     let dtype = DType::F32;
     let mut images = vec![];
-    let img_path = "data/test/test_files/image.png";
+    let img_path = "data/test/test_files/akl-2017-02-27-AM-2017-1099-SA-Brev-till-KP.pdf_page_9.png";
     let image = image::ImageReader::open(img_path).unwrap().decode().unwrap();
     images.push(image);
 
@@ -103,7 +103,7 @@ pub fn select_device() -> Device {
                 Device::Cpu
             }
         };
-        return cuda
+        cuda
     }
     else if candle_core::utils::metal_is_available() {
         let metal = match Device::new_metal(0) {
@@ -113,7 +113,7 @@ pub fn select_device() -> Device {
                 Device::Cpu
             }
         };
-        return metal
+        metal
     } else {
         Device::Cpu
     }
