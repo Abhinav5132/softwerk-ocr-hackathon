@@ -16,11 +16,13 @@ use crate::Light_on_ocr::model_functions::{build_model, run_model};
 mod page_struct;
 use crate::page_struct::Page;
 use crate::Light_on_ocr::preprocess::preprocess;
+use crate::trocr::TrocrSwedishHandwritten;
 
 fn main() {
-    
-    let dir = "./data/images";
     let start_time = time::Instant::now();
+    /* 
+    let dir = "./data/images";
+    
 
     if !Path::new(dir).exists() {
         fs::create_dir_all(dir).expect("failed to create dir");
@@ -47,8 +49,9 @@ fn main() {
             .arg(format!("./data/images/{name}"))
             .status().unwrap_or_else(|_| panic!("failed to convert to png {name}"));
     });
+
     
-    let device = select_device();
+    
     let pages = vec![]; // Empty vector for now add actual loading later,
     if let Ok((model, tokenizer)) = build_model(&device){
         match run_model(model, tokenizer, device, pages) {
@@ -65,6 +68,27 @@ fn main() {
     else {
         println!("Failed to build model");
     }
+    */
+    let device = select_device();
+    let dtype = DType::F32;
+    let mut images = vec![];
+    let img_path = "data/test/test_files/image.png";
+    let image = image::ImageReader::open(img_path).unwrap().decode().unwrap();
+    images.push(image);
+
+    let trocr_swedish_model = 
+    TrocrSwedishHandwritten::build_handwritten_trocr(&device, dtype).unwrap();
+    
+    match trocr_swedish_model.run_handwritten_trocr(images, &device, dtype){
+        Ok(_) => {
+            println!("Transcription finished succesfully");
+        }
+        Err(e) => {
+            dbg!(e);
+        }
+    }
+
+
     let elapsed = start_time.elapsed().as_secs();
     println!("{elapsed}");
 
