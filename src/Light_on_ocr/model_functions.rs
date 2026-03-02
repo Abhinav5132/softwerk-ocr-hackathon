@@ -3,8 +3,6 @@ use crate::{Light_on_ocr::{config_structs::ModelConfig, model::LightOnOCR}, *};
 
 const IM_START:   u32 = 151644; // <|im_start|>
 const IM_END:     u32 = 151645; // <|im_end|> — EOS token
-const VISION_END: u32 = 151653; // <|vision_end|> — terminates image sequence
-const VISION_PAD: u32 = 151654; // <|vision_pad|> — row break between patch rows
 const IMAGE_PAD:  u32 = 151655; // <|image_pad|> — one image patch token
 
 
@@ -39,7 +37,7 @@ pub fn build_model(device: &Device) -> Result<(LightOnOCR, Tokenizer)> {
 /*image path is hardcoded for now should later use the pages vector. */
 pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: Device, pages: Vec<Page>) -> Result<()> {
     
-    let image_path = "data/images/pol-1986-03-04-L854-Anja-Landgree-Inga-Ålenius.pdf-23.png";
+    let image_path = "data/test/test_files/730501a_sundbyberg_stockholm.pdf_page_3.png";
     let img = image::open(image_path)?;
     let preprocessed = preprocess(&img, &device)?;
 
@@ -60,21 +58,12 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: Device, pa
             .to_vec())
     };
 
-    let system_tokens    = encode("system")?;
+    let system_tokens    = encode("system\n")?;
     let user_tokens      = encode("user\n")?;
     let assistant_tokens = encode("assistant\n")?;
     let newline_tokens   = encode("\n")?;
 
-    let mut image_tokens: Vec<u32> = Vec::with_capacity(num_image_tokens + merged_ph);
-    for row in 0..merged_ph {
-        for _ in 0..merged_pw {
-            image_tokens.push(IMAGE_PAD);
-        }
-        if row < merged_ph - 1 {
-            image_tokens.push(VISION_PAD);
-        }
-    }
-    image_tokens.push(VISION_END);
+    let mut image_tokens: Vec<u32> = vec![IMAGE_PAD; num_image_tokens];
 
     // Full prompt:
     // <|im_start|>system<|im_end|>\n
@@ -163,9 +152,6 @@ fn greedy(logits: &candle_core::Tensor) -> Result<u32> {
     let last = logits.narrow(0, seq - 1, 1)?.squeeze(0)?;
     Ok(last.argmax(candle_core::D::Minus1)?.to_scalar::<u32>()?)
 }
-
-
-
 pub fn print_safetensors() -> Result<()> {
     let tensor1 = "models/models--lightonai--LightOnOCR-2-1B-bbox-soup/snapshots/dfdbd3e3627d80e28ddadece14098131aa485700/model.safetensors";
     

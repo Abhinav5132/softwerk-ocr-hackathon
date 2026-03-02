@@ -21,6 +21,8 @@ use crate::trocr::line_segementation::line_segemenation;
 
 fn main() {
     let start_time = time::Instant::now();
+    let device = select_device();
+    let dtype = DType::F32;
     /* 
     let dir = "./data/images";
     
@@ -50,10 +52,11 @@ fn main() {
             .arg(format!("./data/images/{name}"))
             .status().unwrap_or_else(|_| panic!("failed to convert to png {name}"));
     });
-
+        */
     
     
     let pages = vec![]; // Empty vector for now add actual loading later,
+
     if let Ok((model, tokenizer)) = build_model(&device){
         match run_model(model, tokenizer, device, pages) {
             Ok(_) => {
@@ -69,9 +72,8 @@ fn main() {
     else {
         println!("Failed to build model");
     }
-    */
-    let device = select_device();
-    let dtype = DType::F32;
+    
+    /*
     let mut images = vec![];
 
     let image_path = "data/images/akl-2017-02-27-AM-2017-1099-SA-Brev-till-KP.pdf-10.png";
@@ -93,10 +95,10 @@ fn main() {
         Err(e) => {
             dbg!(e);
         }
-    }
+    }*/
 
     let elapsed = start_time.elapsed().as_secs();
-    println!("{elapsed}");
+    println!("{elapsed}"); 
 
 }
 
