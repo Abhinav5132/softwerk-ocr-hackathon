@@ -17,6 +17,7 @@ mod page_struct;
 use crate::page_struct::Page;
 use crate::Light_on_ocr::preprocess::preprocess;
 use crate::trocr::TrocrSwedishHandwritten;
+use crate::trocr::line_segementation::line_segemenation;
 
 fn main() {
     let start_time = time::Instant::now();
@@ -72,10 +73,16 @@ fn main() {
     let device = select_device();
     let dtype = DType::F32;
     let mut images = vec![];
-    let img_path = "data/test/test_files/akl-2017-02-27-AM-2017-1099-SA-Brev-till-KP.pdf_page_9.png";
-    let image = image::ImageReader::open(img_path).unwrap().decode().unwrap();
-    images.push(image);
 
+    let image_path = "data/images/akl-2017-02-27-AM-2017-1099-SA-Brev-till-KP.pdf-10.png";
+    let image_names = line_segemenation(image_path).unwrap();
+
+    for img_path in image_names {
+        let image = image::ImageReader::open(img_path).unwrap().decode().unwrap();
+        images.push(image);
+
+    }
+    
     let trocr_swedish_model = 
     TrocrSwedishHandwritten::build_handwritten_trocr(&device, dtype).unwrap();
     
@@ -87,7 +94,6 @@ fn main() {
             dbg!(e);
         }
     }
-
 
     let elapsed = start_time.elapsed().as_secs();
     println!("{elapsed}");

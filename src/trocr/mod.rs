@@ -81,67 +81,59 @@ impl TrocrSwedishHandwritten {
         let pre_process_config = image_processor::PreProcessorConfig::default();
         let preprocessor = image_processor::VITImageProcessor::new(pre_process_config);
 
-        let image = preprocessor.preprocess(images, device, dtype)?.to_device(device)?;
+        // Process each image (line) separately
+        for (img_idx, image) in images.into_iter().enumerate() {
+            let single_image = vec![image];
+            let processed_image = preprocessor.preprocess(single_image, device, dtype)?.to_device(device)?;
 
-        let encoder = self.model.encoder().forward(&image)?;
-        self.model.reset_kv_cache();
+            let encoder = self.model.encoder().forward(&processed_image)?;
+            self.model.reset_kv_cache();
 
-        let mut logits_processor = generation::LogitsProcessor::new(1337, None, None);
+            let mut logits_processor = generation::LogitsProcessor::new(1337, None, None);
 
-        let mut token_ids: Vec<u32> = vec![self.decoder_config.decoder_start_token_id];
-        let mut tokenizer = TrocrSwedishHandwritten::get_tokenizer()?;
+            let mut token_ids: Vec<u32> = vec![self.decoder_config.decoder_start_token_id];
+            let mut tokenizer = TrocrSwedishHandwritten::get_tokenizer()?;
 
-        println!(
-            "Starting decode (decoder_start={}, bos={}, pad={}, eos={})",
-            self.decoder_config.decoder_start_token_id,
-            self.decoder_config.bos_token_id,
-            self.decoder_config.pad_token_id,
-            self.decoder_config.eos_token_id,
-        );
+            /*This iterates to 1000 and force stops if an EOS token is never hit. 
+            we shouldnt have more than 1000 tokens per line of text so this limit is still overkill */
+            for index in 0..30{
+                let context_size = if index >= 1 {1} else {
+                    token_ids.len()
+                };
 
-        /*This iterates to 200 and force stops if an EOS token is never hit. 
-        we shouldnt have more thatn 200 tokens per line of text so this limit is still overkill */
-        for index in 0..1000{
-            let context_size = if index >= 1 {1} else {
-                token_ids.len()
-            };
+                let start_pos = token_ids.len().saturating_sub(context_size);
+                let input_ids = Tensor::new(&token_ids[start_pos..], device)?.unsqueeze(0)?;
+                let logits = self.model.decode(&input_ids, &encoder, start_pos)?;
 
-            let start_pos = token_ids.len().saturating_sub(context_size);
-            let input_ids = Tensor::new(&token_ids[start_pos..], device)?.unsqueeze(0)?;
-            let logits = self.model.decode(&input_ids, &encoder, start_pos)?;
+                let logits = logits.squeeze(0)?;
+                let logits = logits.get(logits.dim(0)? - 1)?;
+                let mut logits_vec = logits.to_vec1::<f32>()?;
+                
+                if index >= 1 {
+                    // Avoid getting stuck in special-token loops once decoding has started.
+                    logits_vec[self.decoder_config.bos_token_id] = f32::NEG_INFINITY;
+                    logits_vec[self.decoder_config.pad_token_id] = f32::NEG_INFINITY;
+                }
+                let logits = Tensor::from_vec(logits_vec, self.decoder_config.vocab_size, device)?;
+                let token = logits_processor.sample(&logits)?;
+                token_ids.push(token);
+                
 
-            let logits = logits.squeeze(0)?;
-            let logits = logits.get(logits.dim(0)? - 1)?;
-            let mut logits_vec = logits.to_vec1::<f32>()?;
-            if index == 0 {
-                let mut top: Vec<(usize, f32)> = logits_vec.iter().copied().enumerate().collect();
-                top.sort_by(|a, b| b.1.total_cmp(&a.1));
-                println!("Step 0 top-5 logits: {:?}", &top[..5]);
+                if let Some(t) =  tokenizer.next_token(token)?{
+                    print!("{t}");
+                    let _ = std::io::stdout().flush();
+                }
+
+                if token == self.decoder_config.eos_token_id {
+                    break;
+                }
+            }   
+
+            if let Ok(Some(rest)) = tokenizer.decode_rest() {
+                print!("{rest}");
             }
-            if index >= 1 {
-                // Avoid getting stuck in special-token loops once decoding has started.
-                logits_vec[self.decoder_config.bos_token_id] = f32::NEG_INFINITY;
-                logits_vec[self.decoder_config.pad_token_id] = f32::NEG_INFINITY;
-            }
-            let logits = Tensor::from_vec(logits_vec, self.decoder_config.vocab_size, device)?;
-            let token = logits_processor.sample(&logits)?;
-            token_ids.push(token);
-            
-
-            if let Some(t) =  tokenizer.next_token(token)?{
-                print!("{t}");
-                let _ = std::io::stdout().flush();
-            }
-
-            if token == self.decoder_config.eos_token_id {
-                break;
-            }
-        }   
-
-        if let Ok(Some(rest)) = tokenizer.decode_rest() {
-            print!("{rest}");
+            println!();
         }
-        println!();
 
         Ok(())
     }
