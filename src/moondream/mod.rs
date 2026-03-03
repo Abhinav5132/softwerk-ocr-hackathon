@@ -143,7 +143,7 @@ pub fn run_moondream(device: &Device, image: DynamicImage, context: String) -> R
         VarBuilder::from_mmaped_safetensors(&["models/moondream/model.safetensors"], dtype, device)?
     };
 
-    let model = moondream::Model::new(&config, vb.pp("Model"))?;
+    let model = moondream::Model::new(&config, vb)?;
 
     let mut pipeline = TextGeneration::new(
         model, 
@@ -161,10 +161,29 @@ pub fn run_moondream(device: &Device, image: DynamicImage, context: String) -> R
     let image_embeds = image.unsqueeze(0)?;
     let image_embeds = image_embeds.apply(pipeline.model.vision_encoder())?;
 
-    let prompt = format!("
-    \n\nQuestion: Describe this image in Swedish.
-     It appears in a document with the following surrounding text: {}\n\nAnswer:", context);
+    let prompt = build_prompt(context);
     pipeline.run(&prompt, &image_embeds, 250usize)
     
 
+}
+
+pub fn build_prompt( context: String) -> String {
+    match context {
+        ctx if !ctx.trim().is_empty() => format!(
+            "\n\nQuestion: You are assisting in transcribing analytical evidence from historical documents.
+            This image was found embedded in an official document. 
+            The surrounding text in the document reads: \"{}\".
+            Based on this context, provide a detailed forensic description of the image.
+            Describe all visible people, objects, locations.
+            \n\nAnswer:",
+            ctx.chars().take(400).collect::<String>()
+        ),
+        _ => String::from(
+            "\n\nQuestion: You are assisting in transcribing analytical evidence from historical documents.
+            This image was found embedded in an official document.
+            Provide a detailed forensic description of the image.
+            Describe all visible people, objects, locations.
+            \n\nAnswer:"
+        ),
+    }
 }

@@ -37,7 +37,7 @@ pub fn build_model(device: &Device) -> Result<(LightOnOCR, Tokenizer)> {
 /*image path is hardcoded for now should later use the pages vector. */
 pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: Device, pages: Vec<Page>) -> Result<()> {
     
-    let image_path = "data/test/test_files/pol-1994-03-24-SÄPO-PM-Swedenborgskyrkan-HE-15241-02.pdf_page_3.png";
+    let image_path = "data/image.png";
     let img = image::open(image_path)?;
     let preprocessed = preprocess(&img, &device)?;
 
@@ -58,11 +58,11 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: Device, pa
             .to_vec())
     };
 
-    let system_tokens    = encode("system\n")?;
+    let system_tokens    = encode("system")?;
     let user_tokens      = encode("user\n")?;
     let assistant_tokens = encode("assistant\n")?;
     let newline_tokens   = encode("\n")?;
-    let prompt = encode("You are a very helpfull assistant. Translate into markdown and Make all letters a\n")?;
+    let prompt = encode("describe this image\n")?;
 
     let mut image_tokens: Vec<u32> = vec![IMAGE_PAD; num_image_tokens];
 
@@ -79,8 +79,8 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: Device, pa
 
     input_ids.push(IM_START);
     input_ids.extend_from_slice(&user_tokens);
-     input_ids.extend_from_slice(&prompt);
     input_ids.extend_from_slice(&image_tokens);
+    input_ids.extend_from_slice(&prompt);
     input_ids.push(IM_END);
     input_ids.extend_from_slice(&newline_tokens);
 

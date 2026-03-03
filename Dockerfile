@@ -17,7 +17,7 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/huggingface \
     hf download lightonai/LightOnOCR-2-1B-bbox-soup tokenizer.json model.safetensors config.json --local-dir models/LightOnOCR
 RUN --mount=type=cache,target=/root/.cache/huggingface \
-    hf download vikhyatk/moondream2 tokenizer.json model.safetensors --local-dir models/moondream
+    hf download vikhyatk/moondream tokenizer.json model.safetensors --local-dir models/moondream
 COPY --from=builder /usr/src/app/target/release/softwerk-ocr-hackathon /app/softwerk-ocr-hackathon
 
 

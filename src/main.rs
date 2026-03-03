@@ -15,7 +15,7 @@ pub mod moondream;
 use crate::Light_on_ocr::model_functions::{build_model, print_safetensors, run_model};
 
 mod page_struct;
-use crate::moondream::run_moondream;
+use moondream::run_moondream;
 use crate::page_struct::Page;
 use crate::Light_on_ocr::preprocess::preprocess;
 use crate::trocr::TrocrSwedishHandwritten;
@@ -55,6 +55,7 @@ fn main() {
             .status().unwrap_or_else(|_| panic!("failed to convert to png {name}"));
     });
  
+       
     
     let pages = vec![]; // Empty vector for now add actual loading later,
 
@@ -73,8 +74,7 @@ fn main() {
     else {
         println!("Failed to build model");
     }
-    
-       */
+    */
     /*
     let mut images = vec![];
 
@@ -159,9 +159,9 @@ Emanuel Swedenborg, vars läror förs vidare av en liten okänd sekt, var en fra
 
     let image = image::open("data/image.png").unwrap();
 
-    let _= run_moondream(&select_device(), image, context.to_owned()).unwrap();
+    let _= run_moondream(&select_device(), image, context.to_string()).unwrap();
     let elapsed = start_time.elapsed().as_secs();
-    println!("{elapsed}"); 
+    println!("{elapsed}");
 
 }
 
