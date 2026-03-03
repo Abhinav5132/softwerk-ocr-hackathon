@@ -143,7 +143,7 @@ pub fn run_moondream(device: &Device, image: DynamicImage, context: String) -> R
         VarBuilder::from_mmaped_safetensors(&["models/moondream/model.safetensors"], dtype, device)?
     };
 
-    let model = moondream::Model::new(&config, vb)?;
+    let model = moondream::Model::new(&config, vb.pp("Model"))?;
 
     let mut pipeline = TextGeneration::new(
         model, 

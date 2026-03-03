@@ -155,7 +155,7 @@ fn greedy(logits: &candle_core::Tensor) -> Result<u32> {
     Ok(last.argmax(candle_core::D::Minus1)?.to_scalar::<u32>()?)
 }
 pub fn print_safetensors() -> Result<()> {
-    let tensor1 = "models/models--lightonai--LightOnOCR-2-1B-bbox-soup/snapshots/dfdbd3e3627d80e28ddadece14098131aa485700/model.safetensors";
+    let tensor1 = "models/moondream/model.safetensors";
     
     let tensors = load(tensor1, &candle_core::Device::Cpu)?;
 

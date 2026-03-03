@@ -12,7 +12,7 @@ use tokenizers::Tokenizer;
 pub mod Light_on_ocr;
 pub mod trocr;
 pub mod moondream;
-use crate::Light_on_ocr::model_functions::{build_model, run_model};
+use crate::Light_on_ocr::model_functions::{build_model, print_safetensors, run_model};
 
 mod page_struct;
 use crate::moondream::run_moondream;
@@ -160,7 +160,6 @@ Emanuel Swedenborg, vars läror förs vidare av en liten okänd sekt, var en fra
     let image = image::open("data/image.png").unwrap();
 
     let _= run_moondream(&select_device(), image, context.to_owned()).unwrap();
-
     let elapsed = start_time.elapsed().as_secs();
     println!("{elapsed}"); 
 
