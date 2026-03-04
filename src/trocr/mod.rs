@@ -10,6 +10,7 @@ use std::io::Write;
 use crate::{trocr::config_structs::ModelConfig};
 pub mod config_structs;
 pub mod image_processor;
+#[cfg(feature = "opencv")]
 pub mod line_segementation;
 
 pub struct TrocrSwedishHandwritten{

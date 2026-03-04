@@ -105,29 +105,35 @@ fn main() {
 
 /*Selects the device to you, falls back to cpu if no CUDA or METAL devices found */
 pub fn select_device() -> Device {
-    if candle_core::utils::cuda_is_available() {
-        let cuda = match Device::new_cuda(0) {
-            Ok(c) => c,
-            Err(e) => {
-                dbg!(e);
-                Device::Cpu
-            }
-        };
-        cuda
-    }
-    else if candle_core::utils::metal_is_available() {
-        let metal = match Device::new_metal(0) {
-            Ok(m) => m,
-            Err(e) => {
-                dbg!(e);
-                Device::Cpu
-            }
-        };
-        metal
-    } else {
-        Device::Cpu
+    #[cfg(feature = "cuda")]
+    {
+        if candle_core::utils::cuda_is_available() {
+            let cuda = match Device::new_cuda(0) {
+                Ok(c) => c,
+                Err(e) => {
+                    dbg!(e);
+                    Device::Cpu
+                }
+            };
+            return cuda;
+        }
     }
 
+    #[cfg(feature = "metal")]
+    {
+        if candle_core::utils::metal_is_available() {
+            let metal = match Device::new_metal(0) {
+                Ok(m) => m,
+                Err(e) => {
+                    dbg!(e);
+                    Device::Cpu
+                }
+            };
+            return metal;
+        }
+    }
+
+    Device::Cpu
 }
 
 pub fn get_dtype(device: &Device) -> DType{

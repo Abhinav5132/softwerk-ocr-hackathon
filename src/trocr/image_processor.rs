@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use candle_core::{DType, Device, Tensor, quantized::cuda::WARP_SIZE};
+use candle_core::{DType, Device, Tensor};
 use image::DynamicImage;
 use anyhow::Result;
 
