@@ -3,7 +3,7 @@ FROM rust:1.93-slim-bookworm AS builder
 WORKDIR /usr/src/app
 COPY . .
 
-# install system dependencies needed to compile some crates (openssl, pkg-config, etc.)
+# install system dependencies needed to compile some crates (openssl, pkg-config, OpenCV, etc.)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         pkg-config \
@@ -11,6 +11,8 @@ RUN apt-get update && \
         clang \
         libclang-dev \
         llvm-dev \
+        cmake \
+        libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -25,6 +27,7 @@ RUN apt-get update && \
         python3-pip \
         python3-venv \
         curl \
+        libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # install Hugging Face CLI (requires python)
