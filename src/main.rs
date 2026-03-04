@@ -9,37 +9,27 @@ pub mod Light_on_ocr;
 pub mod trocr;
 pub mod moondream;
 pub mod pdf;
-use crate::pdf::convert_pdf_to_image;
 
 mod page_struct;
 use crate::page_struct::{ImageCoordinates, Page};
 use crate::Light_on_ocr::preprocess::preprocess;
+use crate::pdf::get_pdfs_converted_as_images;
 
 fn main() {
     let start_time = time::Instant::now();
     let device = select_device();
     let dtype = DType::F32;
-    /* 
-        let _ = convert_pdf_to_image(); 
-    */
-    let mut unprocessed_outputs = vec![];
     // Build the LightOnOcr and get the unprocessed output from it. 
-    let mut pages = vec![]; // Empty vector for now add actual loading later,
 
-    //TODO dont manually load one page load all pages in data/converted
-    pages.push(
-        Page { 
-            path: "data/images/pol-1994-03-24-SÄPO-PM-Swedenborgskyrkan-HE-15241-02.pdf-4.png".to_string(), 
-            name: "test".to_string() 
-        }
-    );
+    println!("Converting pdfs to pngs");
+    let mut pages = get_pdfs_converted_as_images();
+
     // the { } ensure the model goes out of memory once its finished transcribing. We dont want multiple models loaded in memeory at the same time
     {
         if let Ok((model, tokenizer)) = Light_on_ocr::model_functions::build_model(&device){
-            match Light_on_ocr::model_functions::run_model(model, tokenizer, &device, pages) {
-                Ok(output) => {
+            match Light_on_ocr::model_functions::run_model(model, tokenizer, &device, &mut pages) {
+                Ok(_) => {
                     println!("Transcription finished successfully");
-                    unprocessed_outputs = output;
                 }
 
                 Err(e) => {
@@ -53,13 +43,11 @@ fn main() {
         }
     }
 
-    let mut processed_outputs = vec![];
     {
         if let Ok(pipeline) = moondream::build_model(&device){
-            match moondream::run_moondream(pipeline, &device, unprocessed_outputs){
-                Ok(output) => {
+            match moondream::run_moondream(pipeline, &device, &mut pages){
+                Ok(_) => {
                     println!("Description finished succesfully");
-                    processed_outputs = output
                 }
                 Err(e) => {
                     dbg!(e);
@@ -80,6 +68,135 @@ fn main() {
 
     let image_path = "data/images/akl-2017-02-27-AM-2017-1099-SA-Brev-till-KP.pdf-10.png";
     let image_names = line_segemenation(image_path).unwrap();
+pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, pages: &mut Vec<Page>) -> Result<()> {
+    let image_regex = Regex::new(r"!\[image\]\(image_(\d+)\.png\)\s*(\d+),(\d+),(\d+),(\d+)")
+    .expect("Failed to generate image extraction regex");
+
+    for page in pages.iter_mut(){
+        let image_path = &page.path;
+        let img = image::open(image_path)?;
+        let image_dimentions = ImageDimentions{
+            img_h: img.height(),
+            img_w: img.width()
+        };
+        let preprocessed = preprocess(&img, device)?;
+
+        // Merged patch grid dimensions after 2x2 spatial merge
+        let merged_ph = preprocessed.ph / 2;
+        let merged_pw = preprocessed.pw / 2;
+        let num_image_tokens = merged_ph * merged_pw; // IMAGE_PAD count = 2200
+
+        println!("ph={} pw={} merged_ph={} merged_pw={} num_image_tokens={}",
+            preprocessed.ph, preprocessed.pw, merged_ph, merged_pw, num_image_tokens);
+
+        // Encode only plain text — special tokens inserted by id
+        let encode = |s: &str| -> Result<Vec<u32>> {
+            Ok(tokenizer
+                .encode(s, false)
+                .map_err(|e| anyhow::anyhow!("{}", e))?
+                .get_ids()
+                .to_vec())
+        };
+
+        let system_tokens    = encode("system")?;
+        let user_tokens      = encode("user\n")?;
+        let assistant_tokens = encode("assistant\n")?;
+        let newline_tokens   = encode("\n")?;
+        let prompt = encode("describe this image\n")?;
+
+        let mut image_tokens: Vec<u32> = vec![IMAGE_PAD; num_image_tokens];
+
+        // Full prompt:
+        // <|im_start|>system<|im_end|>\n
+        // <|im_start|>user\n[image tokens]<|im_end|>\n
+        // <|im_start|>assistant\n
+        let mut input_ids: Vec<u32> = Vec::new();
+
+        input_ids.push(IM_START);
+        input_ids.extend_from_slice(&system_tokens);
+        input_ids.push(IM_END);
+        input_ids.extend_from_slice(&newline_tokens);
+
+        input_ids.push(IM_START);
+        input_ids.extend_from_slice(&user_tokens);
+        input_ids.extend_from_slice(&image_tokens);
+        input_ids.extend_from_slice(&prompt);
+        input_ids.push(IM_END);
+        input_ids.extend_from_slice(&newline_tokens);
+
+        input_ids.push(IM_START);
+        input_ids.extend_from_slice(&assistant_tokens);
+
+        let seq_len = input_ids.len();
+        println!("Sequence length: {} ({} IMAGE_PAD + {} row tokens)",
+            seq_len, num_image_tokens, merged_ph);
+
+        let input_tensor = candle_core::Tensor::from_vec(
+            input_ids,
+            (1, seq_len),
+            device,
+        )?;
+
+        println!("Prefilling...");
+        let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0)?;
+        println!("logits shape: {:?}", logits.shape());
+
+        let mut generated: Vec<u32> = Vec::new();
+        let mut offset = seq_len;
+
+        let first_token = greedy(&logits)?;
+        generated.push(first_token);
+        println!("first token id={} decoded={:?}",
+            first_token,
+            tokenizer.decode(&[first_token], false));
+
+        println!("Generating...");
+        let max_new_tokens = 1024usize;
+
+        for _ in 1..max_new_tokens {
+            let last = *generated.last().unwrap();
+
+            if last == IM_END {
+                break;
+            }
+
+            let input = candle_core::Tensor::from_vec(
+                vec![last],
+                (1, 1),
+                device,
+            )?;
+
+            let logits = model.decode_step(&input, offset)?;
+            let token = greedy(&logits)?;
+            generated.push(token);
+            offset += 1;
+        }
+
+        let decode_ids: Vec<u32> = generated.iter()
+            .copied()
+            .filter(|&t| t != IM_END)
+            .collect();
+
+        let output = tokenizer
+            .decode(&decode_ids, true)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        println!("\n=== Output ===");
+        println!("{}", output);
+
+        let image_regions = get_image_regions(&output, &image_regex, &image_dimentions);
+        
+        page.unprocessed = Some(UnprocessedOutput { 
+            loaded_image: img,
+            image_dimentions, 
+            unprocessed_output: 
+            output, 
+            image_regions, 
+            is_handwritten: false // TODO Add a function to determine if its handwritten or not.
+        });
+    }
+    Ok(())
+}
 
     for img_path in image_names {
         let image = image::ImageReader::open(img_path).unwrap().decode().unwrap();

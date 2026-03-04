@@ -57,13 +57,15 @@ pub fn build_model(device: &Device) -> Result<TextGeneration>{
 
 }
 
-pub fn run_moondream(mut pipeline: TextGeneration, device: &Device, mut unprocessed_outputs: Vec<UnprocessedOutput>) -> Result<Vec<ProcessedOutput>> {
+pub fn run_moondream(mut pipeline: TextGeneration, device: &Device, pages: &mut Vec<Page>) -> Result<()> {
     let dtype = get_dtype(device);
-    let mut processed_outputs:Vec<ProcessedOutput> = vec![];
-    for output in unprocessed_outputs{
-        let mut context = output.unprocessed_output;
-        let page = output.page;
-        for image_region in output.image_regions{
+    for page in pages.iter_mut(){
+        let output =  match &page.unprocessed{
+            Some(u) => u,
+            None => continue,
+        };
+        let mut context = output.unprocessed_output.clone();
+        for image_region in &output.image_regions{
             //extract the image here 
             let image = extract_image(&image_region, &output.image_dimentions, &output.loaded_image);
             let image = convert_image(image, device)?.to_device(device)?.to_dtype(dtype)?;
@@ -74,18 +76,16 @@ pub fn run_moondream(mut pipeline: TextGeneration, device: &Device, mut unproces
             let prompt = build_prompt(&context);
             pipeline.model.text_model.clear_kv_cache();
             let image_descrption = pipeline.run(&prompt, &image_embeds, 250usize)?;
-            let label = image_region.lable;
-            context = context.replace(&label, &image_descrption); // TODO maybe we can embed the image snipped back in. 
+            let label = &image_region.lable;
+            context = context.replace(label, &image_descrption); // TODO maybe we can embed the image snipped back in. 
         }
         
-        let processed_output = ProcessedOutput{
-            page,
+        page.processed = Some(ProcessedOutput{
             processed_output: context,
-        };
-        processed_outputs.push(processed_output);
+        });
     }
     
-    Ok(processed_outputs)
+    Ok(())
 
 }
 

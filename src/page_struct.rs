@@ -1,7 +1,5 @@
 use image::DynamicImage;
 
-
-
 /*
 path -> path to the PNG file
 img_coordinates -> if there is an image present in the page a image descriptor model will be run, t
@@ -12,7 +10,8 @@ hese coordianes are gotten from LightOnOCr
 #[derive(Clone)]
 pub struct Page {
     pub path: String, 
-    pub name: String,
+    pub unprocessed: Option<UnprocessedOutput>,
+    pub processed: Option<ProcessedOutput>,
 }
 
 #[derive(Clone)]
@@ -24,6 +23,7 @@ pub struct ImageCoordinates {
     pub y2: u32,
 }
 
+#[derive(Clone)]
 pub struct ImageDimentions{
     pub img_h: u32,
     pub img_w: u32
@@ -41,8 +41,8 @@ for image description. Since we havent stripped the ![image] coordinates we can 
 context of the text above and below. 
 If the text is only images unprocessed_output will be empty and we then run the model with generic context.
 */
+#[derive(Clone)]
 pub struct UnprocessedOutput{
-    pub page: Page,
     pub image_dimentions: ImageDimentions,
     pub loaded_image: DynamicImage,
     pub unprocessed_output: String,
@@ -50,7 +50,7 @@ pub struct UnprocessedOutput{
     pub is_handwritten: bool
 }
 
+#[derive(Clone)]
 pub struct ProcessedOutput {
-    pub page: Page,
     pub processed_output: String // This contains the output from transcription(lightonocr || trocr) and the ![image]coordinates replaced with moondream output
 }

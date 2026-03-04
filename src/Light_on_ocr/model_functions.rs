@@ -33,12 +33,12 @@ pub fn build_model(device: &Device) -> Result<(LightOnOCR, Tokenizer)> {
 
 
 /*image path is hardcoded for now should later use the pages vector. */
-pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, pages: Vec<Page>) -> Result<Vec<UnprocessedOutput>> {
+pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, pages: &mut Vec<Page>) -> Result<()> {
     let image_regex = Regex::new(r"!\[image\]\(image_(\d+)\.png\)\s*(\d+),(\d+),(\d+),(\d+)")
     .expect("Failed to generate image extraction regex");
 
-    let mut unpocessed_output: Vec<UnprocessedOutput> = vec![];
-    for page in pages.iter(){
+    for page in pages.iter_mut(){
+        model.clear_kv_cache();
         let image_path = &page.path;
         let img = image::open(image_path)?;
         let image_dimentions = ImageDimentions{
@@ -152,18 +152,16 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
 
         let image_regions = get_image_regions(&output, &image_regex, &image_dimentions);
         
-        unpocessed_output.push(UnprocessedOutput { 
-            page: page.clone(), 
+        page.unprocessed = Some(UnprocessedOutput { 
             loaded_image: img,
             image_dimentions, 
             unprocessed_output: 
             output, 
             image_regions, 
             is_handwritten: false // TODO Add a function to determine if its handwritten or not.
-        }
-        );
+        });
     }
-    Ok(unpocessed_output)
+    Ok(())
 }
 
 
