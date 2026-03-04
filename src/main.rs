@@ -137,9 +137,6 @@ pub fn select_device() -> Device {
 }
 
 pub fn get_dtype(device: &Device) -> DType{
-    let dtype = match device {
-        Device::Cpu => DType::BF16,
-        _ => DType::BF16,
-    };
-    dtype
+    let _ = device;
+    DType::BF16
 }
