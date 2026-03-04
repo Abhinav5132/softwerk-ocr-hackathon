@@ -39,6 +39,8 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
 
     for page in pages.iter_mut(){
         model.clear_kv_cache();
+
+        println!("Processing page: {}", page.path);
         let image_path = &page.path;
         let img = image::open(image_path)?;
         let image_dimentions = ImageDimentions{
@@ -51,9 +53,6 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
         let merged_ph = preprocessed.ph / 2;
         let merged_pw = preprocessed.pw / 2;
         let num_image_tokens = merged_ph * merged_pw; // IMAGE_PAD count = 2200
-
-        println!("ph={} pw={} merged_ph={} merged_pw={} num_image_tokens={}",
-            preprocessed.ph, preprocessed.pw, merged_ph, merged_pw, num_image_tokens);
 
         // Encode only plain text — special tokens inserted by id
         let encode = |s: &str| -> Result<Vec<u32>> {
@@ -94,8 +93,6 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
         input_ids.extend_from_slice(&assistant_tokens);
 
         let seq_len = input_ids.len();
-        println!("Sequence length: {} ({} IMAGE_PAD + {} row tokens)",
-            seq_len, num_image_tokens, merged_ph);
 
         let input_tensor = candle_core::Tensor::from_vec(
             input_ids,
@@ -105,7 +102,6 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
 
         println!("Prefilling...");
         let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0)?;
-        println!("logits shape: {:?}", logits.shape());
 
         let mut generated: Vec<u32> = Vec::new();
         let mut offset = seq_len;
@@ -115,6 +111,10 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
         println!("first token id={} decoded={:?}",
             first_token,
             tokenizer.decode(&[first_token], false));
+
+        // Explicitly drop large tensors to free memory
+        drop(logits);
+        drop(input_tensor);
 
         println!("Generating...");
         let max_new_tokens = 1024usize;
@@ -136,6 +136,10 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
             let token = greedy(&logits)?;
             generated.push(token);
             offset += 1;
+            
+            // Explicitly drop logits after each step
+            drop(logits);
+            drop(input);
         }
 
         let decode_ids: Vec<u32> = generated.iter()

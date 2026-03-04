@@ -1,4 +1,4 @@
-use std::time;
+use std::{fs, time};
 use std::io::Write;
 use candle_nn::VarBuilder;
 use candle_core::{DType, Device, safetensors::*};
@@ -18,7 +18,6 @@ use crate::pdf::get_pdfs_converted_as_images;
 fn main() {
     let start_time = time::Instant::now();
     let device = select_device();
-    let dtype = DType::F32;
     // Build the LightOnOcr and get the unprocessed output from it. 
 
     println!("Converting pdfs to pngs");
@@ -58,9 +57,30 @@ fn main() {
             println!("Failed to build moondream model")
         }
     }
+
+    for page in pages.iter() {
+    if let Some(ref processed) = page.processed {
+        let output_path = format!(
+            "./data/output/{}.txt",
+            std::path::Path::new(&page.path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+        );
+        fs::create_dir_all("./data/output").expect("failed to create output directory");
+
+        let mut file = fs::File::create(&output_path)
+            .expect("failed to create output file");
+
+        writeln!(file, "{}", processed.processed_output)
+            .expect("failed to write transcription");
+
+    } else {
+        println!("Skipping page with no processed output: {}", page.path);
+    }
+}
     let elapsed = start_time.elapsed().as_secs();
     println!("{elapsed}");
-    
 
 
     /*

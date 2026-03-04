@@ -68,16 +68,20 @@ pub fn run_moondream(mut pipeline: TextGeneration, device: &Device, pages: &mut 
         for image_region in &output.image_regions{
             //extract the image here 
             let image = extract_image(&image_region, &output.image_dimentions, &output.loaded_image);
-            let image = convert_image(image, device)?.to_device(device)?.to_dtype(dtype)?;
+            let image_tensor = convert_image(image, device)?.to_device(device)?.to_dtype(dtype)?;
 
-            let image_embeds = image.unsqueeze(0)?;
+            let image_embeds = image_tensor.unsqueeze(0)?;
             let image_embeds = image_embeds.apply(pipeline.model.vision_encoder())?;
 
             let prompt = build_prompt(&context);
             pipeline.model.text_model.clear_kv_cache();
             let image_descrption = pipeline.run(&prompt, &image_embeds, 250usize)?;
             let label = &image_region.lable;
-            context = context.replace(label, &image_descrption); // TODO maybe we can embed the image snipped back in. 
+            context = context.replace(label, &image_descrption); // TODO maybe we can embed the image snipped back in.
+            
+            // Explicitly drop large tensors to free memory
+            drop(image_embeds);
+            drop(image_tensor);
         }
         
         page.processed = Some(ProcessedOutput{
