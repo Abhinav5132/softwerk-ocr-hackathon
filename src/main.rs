@@ -29,7 +29,7 @@ fn main() {
     //TODO dont manually load one page load all pages in data/converted
     pages.push(
         Page { 
-            path: "data/images/pol-1994-03-24-SÄPO-PM-Swedenborgskyrkan-HE-15241-02.pdf-4.png".to_string(), 
+            path: "data/images/pol_1994_03_24_SÄPO_PM_Swedenborgskyrkan_HE_15241_02_pdf_page_3.png".to_string(), 
             name: "test".to_string() 
         }
     );
@@ -138,7 +138,7 @@ pub fn select_device() -> Device {
 
 pub fn get_dtype(device: &Device) -> DType{
     let dtype = match device {
-        Device::Cpu => DType::F32,
+        Device::Cpu => DType::BF16,
         _ => DType::BF16,
     };
     dtype

@@ -1,6 +1,6 @@
 use candle_core::Device;
 use crate::{Light_on_ocr::{config_structs::ModelConfig, model::LightOnOCR}, page_struct::{ImageDimentions, UnprocessedOutput}, *};
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 const IM_START:   u32 = 151644; // <|im_start|>
 const IM_END:     u32 = 151645; // <|im_end|> — EOS token
@@ -104,7 +104,7 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
         )?;
 
         println!("Prefilling...");
-        let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0)?;
+        let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0).context("MODEL FORWARD FAIL")?;
         println!("logits shape: {:?}", logits.shape());
 
         let mut generated: Vec<u32> = Vec::new();
@@ -132,7 +132,7 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
                 device,
             )?;
 
-            let logits = model.decode_step(&input, offset)?;
+            let logits = model.decode_step(&input, offset).context("DECODE STEP ERROR")?;
             let token = greedy(&logits)?;
             generated.push(token);
             offset += 1;
