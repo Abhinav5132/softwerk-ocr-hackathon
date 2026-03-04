@@ -3,7 +3,10 @@ FROM rust:1.93-slim-bookworm AS builder
 WORKDIR /usr/src/app
 COPY . .
 
+RUN sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources
+
 # install system dependencies needed to compile some crates (openssl, pkg-config, OpenCV, etc.)
+# add CUDA toolkit for GPU support
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         pkg-config \
@@ -13,6 +16,7 @@ RUN apt-get update && \
         llvm-dev \
         cmake \
         libopencv-dev \
+        nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -20,6 +24,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release
 
 FROM debian:bookworm-slim
+RUN sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         poppler-utils \
@@ -28,6 +34,7 @@ RUN apt-get update && \
         python3-venv \
         curl \
         libopencv-dev \
+        nvidia-cuda-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
 # install Hugging Face CLI (requires python)
