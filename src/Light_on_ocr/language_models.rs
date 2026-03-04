@@ -3,7 +3,8 @@ use candle_nn::{Activation, Linear, VarBuilder, kv_cache::ConcatKvCache, linear_
 use candle_nn::{RmsNorm, rms_norm};
 use std::sync::Arc;
 
-use crate::config_structs::TextConfig;
+use crate::Light_on_ocr::config_structs::TextConfig;
+
 
 /*Copied from candle-transformers/src/models/util.rs */
 pub fn repeat_kv(xs: Tensor, n_rep: usize) -> Result<Tensor> {
@@ -393,10 +394,17 @@ impl ModelForCausalLM {
     }
 
     pub fn forward_embeds(&mut self, embeds: &Tensor, offset: usize) -> Result<Tensor> {
-        let (_, l, _) = embeds.dims3()?;
-        self.base
-            .forward_embeds(embeds, offset)?
-            .narrow(1, l - 1, 1)? 
-            .apply(&self.lm_head)   
+        let (b, l, _) = embeds.dims3()?;
+        let causal = if l == 1 {
+        None
+    } else {
+            Some(self.base.causal_mask(b, l, offset, None)?)
+        };
+
+        let mut h = embeds.clone();
+        for layer in &mut self.base.layers {
+            h = layer.forward(&h, causal.as_ref(), offset)?;
+        }
+        self.base.norm.forward(&h)   
     }
 }
