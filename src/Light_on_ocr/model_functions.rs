@@ -1,13 +1,10 @@
 use candle_core::Device;
-use crate::{Light_on_ocr::{config_structs::ModelConfig, model::LightOnOCR}, *};
+use crate::{Light_on_ocr::{config_structs::ModelConfig, model::LightOnOCR}, page_struct::{ImageDimentions, UnprocessedOutput}, *};
+use anyhow::Result;
 
 const IM_START:   u32 = 151644; // <|im_start|>
 const IM_END:     u32 = 151645; // <|im_end|> — EOS token
 const IMAGE_PAD:  u32 = 151655; // <|image_pad|> — one image patch token
-
-
-/*Selects the device to you, falls back to cpu if no CUDA or METAL devices found */
-
 
 pub fn build_model(device: &Device) -> Result<(LightOnOCR, Tokenizer)> {
     
@@ -34,117 +31,139 @@ pub fn build_model(device: &Device) -> Result<(LightOnOCR, Tokenizer)> {
     Ok((model, tokenizer))
 }
 
+
 /*image path is hardcoded for now should later use the pages vector. */
-pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: Device, pages: Vec<Page>) -> Result<()> {
-    
-    let image_path = "data/image.png";
-    let img = image::open(image_path)?;
-    let preprocessed = preprocess(&img, &device)?;
+pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, pages: Vec<Page>) -> Result<Vec<UnprocessedOutput>> {
+    let image_regex = Regex::new(r"!\[image\]\(image_(\d+)\.png\)\s*(\d+),(\d+),(\d+),(\d+)")
+    .expect("Failed to generate image extraction regex");
 
-    // Merged patch grid dimensions after 2x2 spatial merge
-    let merged_ph = preprocessed.ph / 2;
-    let merged_pw = preprocessed.pw / 2;
-    let num_image_tokens = merged_ph * merged_pw; // IMAGE_PAD count = 2200
+    let mut unpocessed_output: Vec<UnprocessedOutput> = vec![];
+    for page in pages.iter(){
+        let image_path = &page.path;
+        let img = image::open(image_path)?;
+        let image_dimentions = ImageDimentions{
+            img_h: img.height(),
+            img_w: img.width()
+        };
+        let preprocessed = preprocess(&img, device)?;
 
-    println!("ph={} pw={} merged_ph={} merged_pw={} num_image_tokens={}",
-        preprocessed.ph, preprocessed.pw, merged_ph, merged_pw, num_image_tokens);
+        // Merged patch grid dimensions after 2x2 spatial merge
+        let merged_ph = preprocessed.ph / 2;
+        let merged_pw = preprocessed.pw / 2;
+        let num_image_tokens = merged_ph * merged_pw; // IMAGE_PAD count = 2200
 
-    // Encode only plain text — special tokens inserted by id
-    let encode = |s: &str| -> Result<Vec<u32>> {
-        Ok(tokenizer
-            .encode(s, false)
-            .map_err(|e| anyhow::anyhow!("{}", e))?
-            .get_ids()
-            .to_vec())
-    };
+        println!("ph={} pw={} merged_ph={} merged_pw={} num_image_tokens={}",
+            preprocessed.ph, preprocessed.pw, merged_ph, merged_pw, num_image_tokens);
 
-    let system_tokens    = encode("system")?;
-    let user_tokens      = encode("user\n")?;
-    let assistant_tokens = encode("assistant\n")?;
-    let newline_tokens   = encode("\n")?;
-    let prompt = encode("describe this image\n")?;
+        // Encode only plain text — special tokens inserted by id
+        let encode = |s: &str| -> Result<Vec<u32>> {
+            Ok(tokenizer
+                .encode(s, false)
+                .map_err(|e| anyhow::anyhow!("{}", e))?
+                .get_ids()
+                .to_vec())
+        };
 
-    let mut image_tokens: Vec<u32> = vec![IMAGE_PAD; num_image_tokens];
+        let system_tokens    = encode("system")?;
+        let user_tokens      = encode("user\n")?;
+        let assistant_tokens = encode("assistant\n")?;
+        let newline_tokens   = encode("\n")?;
+        let prompt = encode("describe this image\n")?;
 
-    // Full prompt:
-    // <|im_start|>system<|im_end|>\n
-    // <|im_start|>user\n[image tokens]<|im_end|>\n
-    // <|im_start|>assistant\n
-    let mut input_ids: Vec<u32> = Vec::new();
+        let mut image_tokens: Vec<u32> = vec![IMAGE_PAD; num_image_tokens];
 
-    input_ids.push(IM_START);
-    input_ids.extend_from_slice(&system_tokens);
-    input_ids.push(IM_END);
-    input_ids.extend_from_slice(&newline_tokens);
+        // Full prompt:
+        // <|im_start|>system<|im_end|>\n
+        // <|im_start|>user\n[image tokens]<|im_end|>\n
+        // <|im_start|>assistant\n
+        let mut input_ids: Vec<u32> = Vec::new();
 
-    input_ids.push(IM_START);
-    input_ids.extend_from_slice(&user_tokens);
-    input_ids.extend_from_slice(&image_tokens);
-    input_ids.extend_from_slice(&prompt);
-    input_ids.push(IM_END);
-    input_ids.extend_from_slice(&newline_tokens);
+        input_ids.push(IM_START);
+        input_ids.extend_from_slice(&system_tokens);
+        input_ids.push(IM_END);
+        input_ids.extend_from_slice(&newline_tokens);
 
-    input_ids.push(IM_START);
-    input_ids.extend_from_slice(&assistant_tokens);
+        input_ids.push(IM_START);
+        input_ids.extend_from_slice(&user_tokens);
+        input_ids.extend_from_slice(&image_tokens);
+        input_ids.extend_from_slice(&prompt);
+        input_ids.push(IM_END);
+        input_ids.extend_from_slice(&newline_tokens);
 
-    let seq_len = input_ids.len();
-    println!("Sequence length: {} ({} IMAGE_PAD + {} row tokens)",
-        seq_len, num_image_tokens, merged_ph);
+        input_ids.push(IM_START);
+        input_ids.extend_from_slice(&assistant_tokens);
 
-    let input_tensor = candle_core::Tensor::from_vec(
-        input_ids,
-        (1, seq_len),
-        &device,
-    )?;
+        let seq_len = input_ids.len();
+        println!("Sequence length: {} ({} IMAGE_PAD + {} row tokens)",
+            seq_len, num_image_tokens, merged_ph);
 
-    println!("Prefilling...");
-    let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0)?;
-    println!("logits shape: {:?}", logits.shape());
-
-    let mut generated: Vec<u32> = Vec::new();
-    let mut offset = seq_len;
-
-    let first_token = greedy(&logits)?;
-    generated.push(first_token);
-    println!("first token id={} decoded={:?}",
-        first_token,
-        tokenizer.decode(&[first_token], false));
-
-    println!("Generating...");
-    let max_new_tokens = 1024usize;
-
-    for _ in 1..max_new_tokens {
-        let last = *generated.last().unwrap();
-
-        if last == IM_END {
-            break;
-        }
-
-        let input = candle_core::Tensor::from_vec(
-            vec![last],
-            (1, 1),
-            &device,
+        let input_tensor = candle_core::Tensor::from_vec(
+            input_ids,
+            (1, seq_len),
+            device,
         )?;
 
-        let logits = model.decode_step(&input, offset)?;
-        let token = greedy(&logits)?;
-        generated.push(token);
-        offset += 1;
+        println!("Prefilling...");
+        let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0)?;
+        println!("logits shape: {:?}", logits.shape());
+
+        let mut generated: Vec<u32> = Vec::new();
+        let mut offset = seq_len;
+
+        let first_token = greedy(&logits)?;
+        generated.push(first_token);
+        println!("first token id={} decoded={:?}",
+            first_token,
+            tokenizer.decode(&[first_token], false));
+
+        println!("Generating...");
+        let max_new_tokens = 1024usize;
+
+        for _ in 1..max_new_tokens {
+            let last = *generated.last().unwrap();
+
+            if last == IM_END {
+                break;
+            }
+
+            let input = candle_core::Tensor::from_vec(
+                vec![last],
+                (1, 1),
+                device,
+            )?;
+
+            let logits = model.decode_step(&input, offset)?;
+            let token = greedy(&logits)?;
+            generated.push(token);
+            offset += 1;
+        }
+
+        let decode_ids: Vec<u32> = generated.iter()
+            .copied()
+            .filter(|&t| t != IM_END)
+            .collect();
+
+        let output = tokenizer
+            .decode(&decode_ids, true)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        println!("\n=== Output ===");
+        println!("{}", output);
+
+        let image_regions = get_image_regions(&output, &image_regex, &image_dimentions);
+        
+        unpocessed_output.push(UnprocessedOutput { 
+            page: page.clone(), 
+            loaded_image: img,
+            image_dimentions, 
+            unprocessed_output: 
+            output, 
+            image_regions, 
+            is_handwritten: false // TODO Add a function to determine if its handwritten or not.
+        }
+        );
     }
-
-    let decode_ids: Vec<u32> = generated.iter()
-        .copied()
-        .filter(|&t| t != IM_END)
-        .collect();
-
-    let output = tokenizer
-        .decode(&decode_ids, true)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-    println!("\n=== Output ===");
-    println!("{}", output);
-
-    Ok(())
+    Ok(unpocessed_output)
 }
 
 
@@ -154,6 +173,7 @@ fn greedy(logits: &candle_core::Tensor) -> Result<u32> {
     let last = logits.narrow(0, seq - 1, 1)?.squeeze(0)?;
     Ok(last.argmax(candle_core::D::Minus1)?.to_scalar::<u32>()?)
 }
+
 pub fn print_safetensors() -> Result<()> {
     let tensor1 = "models/moondream/model.safetensors";
     
@@ -166,4 +186,29 @@ pub fn print_safetensors() -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn get_image_regions(output: &str, regex: &Regex, img_dimentions: &ImageDimentions) -> Vec<ImageCoordinates>{
+    let mut image_regions = vec![];
+    for imgs in regex.captures_iter(output){
+        let full = imgs[0].to_string();
+        let x1_norm= imgs[2].parse().unwrap_or(0.0);
+        let y1_norm= imgs[3].parse().unwrap_or(0.0);
+        let x2_norm= imgs[4].parse().unwrap_or(0.0);
+        let y2_norm= imgs[5].parse().unwrap_or(0.0);
+
+        let x1 = ((x1_norm / 1000.0)*img_dimentions.img_w as f32) as u32; 
+        let y1 = ((y1_norm / 1000.0)*img_dimentions.img_h as f32) as u32;
+        let x2 = ((x2_norm / 1000.0)*img_dimentions.img_w as f32) as u32;
+        let y2 = ((y2_norm / 1000.0)*img_dimentions.img_h as f32) as u32;
+
+        image_regions.push(ImageCoordinates{
+            lable: full,
+            x1,
+            y1,
+            x2,
+            y2,
+        });
+    }
+    image_regions
 }

@@ -2925,6 +2925,7 @@ dependencies = [
  "image",
  "opencv",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "tokenizers",
