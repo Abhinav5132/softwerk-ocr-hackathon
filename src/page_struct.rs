@@ -47,7 +47,8 @@ pub struct UnprocessedOutput{
     pub loaded_image: DynamicImage,
     pub unprocessed_output: String,
     pub image_regions: Vec<ImageCoordinates>,
-    pub is_handwritten: bool
+    pub is_handwritten: bool,
+    pub lighton_confidence: f32
 }
 
 pub struct ProcessedOutput {

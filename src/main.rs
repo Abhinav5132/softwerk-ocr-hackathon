@@ -1,38 +1,67 @@
 use std::time;
-use std::io::Write;
-use candle_nn::VarBuilder;
-use candle_core::{DType, Device, safetensors::*};
-use regex::Regex;
-use tokenizers::Tokenizer;
+use std::fs;
+use candle_core::{DType, Device};
 
 pub mod Light_on_ocr;
 pub mod trocr;
 pub mod moondream;
 pub mod pdf;
 use crate::pdf::convert_pdf_to_image;
+use crate::pdf::convert_single_pdf_to_image;
 
 mod page_struct;
-use crate::page_struct::{ImageCoordinates, Page};
-use crate::Light_on_ocr::preprocess::preprocess;
+use crate::page_struct::Page;
+#[cfg(feature = "opencv")]
+use crate::page_struct::ImageCoordinates;
 
+#[cfg(feature = "opencv")]
+const HANDWRITING_CONFIDENCE_THRESHOLD: f32 = 0.28;
+
+
+//TODO: IF AN IMAGE HAS HANDWRITING USE THE HANDWRITTEN MODEL, IF NOT USE THE OTHER MODEL. AND IMPROVE THE OUTPUT OF THE HANDWRITTEN MODEL. BY IMPROVEING LINE SEGEMENTATION AND IMAGE PREPROCESSING (THIKEN the characters).
 fn main() {
     let start_time = time::Instant::now();
     let device = select_device();
-    let dtype = DType::F32;
-    /* 
-        let _ = convert_pdf_to_image(); 
-    */
+    #[cfg(feature = "opencv")]
+    let dtype = candle_core::DType::F32;
     let mut unprocessed_outputs = vec![];
-    // Build the LightOnOcr and get the unprocessed output from it. 
-    let mut pages = vec![]; // Empty vector for now add actual loading later,
+    let mut pages = load_pages_from_images_dir();
 
-    //TODO dont manually load one page load all pages in data/converted
-    pages.push(
-        Page { 
-            path: "data/images/pol_1994_03_24_SÄPO_PM_Swedenborgskyrkan_HE_15241_02_pdf_page_3.png".to_string(), 
-            name: "test".to_string() 
+    #[cfg(feature = "opencv")]
+    {
+        if !has_known_handwritten_page(&pages) {
+            if let Some(pdf_path) = find_known_handwritten_pdf_path() {
+                match convert_single_pdf_to_image(&pdf_path) {
+                    Ok(_) => {
+                        pages = load_pages_from_images_dir();
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                        println!("Failed to convert known handwritten PDF: {}", pdf_path);
+                    }
+                }
+            } else {
+                println!("Known handwritten PDF not found in data/");
+            }
         }
-    );
+    }
+
+    if pages.is_empty() {
+        match convert_pdf_to_image() {
+            Ok(_) => {
+                pages = load_pages_from_images_dir();
+            }
+            Err(e) => {
+                dbg!(e);
+                println!("Failed to convert PDFs to images");
+            }
+        }
+    }
+
+    if pages.is_empty() {
+        println!("No pages found in data/images");
+        return;
+    }
     // the { } ensure the model goes out of memory once its finished transcribing. We dont want multiple models loaded in memeory at the same time
     {
         if let Ok((model, tokenizer)) = Light_on_ocr::model_functions::build_model(&device){
@@ -51,6 +80,52 @@ fn main() {
         else {
             println!("Failed to build model");
         }
+    }
+
+    #[cfg(feature = "opencv")]
+    {
+        match trocr::TrocrSwedishHandwritten::build_handwritten_trocr(&device, dtype) {
+            Ok(mut trocr_model) => {
+                for output in unprocessed_outputs.iter_mut() {
+                    let force_handwritten = is_known_handwritten_page(&output.page.path);
+                    if force_handwritten || output.lighton_confidence < HANDWRITING_CONFIDENCE_THRESHOLD {
+                        match trocr_model.transcribe_page(&output.page.path, &device, dtype) {
+                            Ok(handwritten_text) => {
+                                let merged_text = merge_handwritten_with_placeholders(
+                                    &handwritten_text,
+                                    &output.image_regions,
+                                );
+                                if !merged_text.trim().is_empty() {
+                                    output.unprocessed_output = merged_text;
+                                }
+                                output.is_handwritten = true;
+                                if force_handwritten {
+                                    println!("Forced handwritten routing for {}", output.page.path);
+                                }
+                            }
+                            Err(e) => {
+                                dbg!(e);
+                                println!(
+                                    "Failed handwritten transcription for page: {}",
+                                    output.page.path
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                dbg!(e);
+                println!("Failed to build TroCR handwritten model");
+            }
+        }
+    }
+
+    #[cfg(not(feature = "opencv"))]
+    {
+        println!(
+            "OpenCV feature is disabled; skipping handwritten routing. Build with --features opencv to enable it."
+        );
     }
 
     let mut processed_outputs = vec![];
@@ -101,6 +176,100 @@ fn main() {
 
     
 
+}
+
+fn load_pages_from_images_dir() -> Vec<Page> {
+    let mut pages = vec![];
+
+    let entries = match fs::read_dir("data/images") {
+        Ok(entries) => entries,
+        Err(_) => return pages,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let extension = match path.extension().and_then(|ext| ext.to_str()) {
+            Some(ext) => ext.to_ascii_lowercase(),
+            None => continue,
+        };
+
+        if extension != "png" && extension != "jpg" && extension != "jpeg" {
+            continue;
+        }
+
+        let page_path = path.to_string_lossy().to_string();
+        let page_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        pages.push(Page {
+            path: page_path,
+            name: page_name,
+        });
+    }
+
+    pages.sort_by(|left, right| left.path.cmp(&right.path));
+    pages
+}
+
+#[cfg(feature = "opencv")]
+fn has_known_handwritten_page(pages: &[Page]) -> bool {
+    pages.iter().any(|page| is_known_handwritten_page(&page.path))
+}
+
+#[cfg(feature = "opencv")]
+fn find_known_handwritten_pdf_path() -> Option<String> {
+    let entries = fs::read_dir("data").ok()?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+
+        let lower = file_name.to_lowercase();
+        if lower.contains("pol-1986-03-03") && lower.contains("d-364") {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+#[cfg(feature = "opencv")]
+fn is_known_handwritten_page(page_path: &str) -> bool {
+    let lower = page_path.to_lowercase();
+    lower.contains("pol-1986-03-03-granne-till-mårten-palme-röda-boken-förhör-mårten-palme-d-364")
+        || lower.contains("pol-1986-03-03-granne-till-marten-palme-roda-boken-forhor-marten-palme-d-364")
+}
+
+#[cfg(feature = "opencv")]
+fn merge_handwritten_with_placeholders(
+    handwritten_text: &str,
+    image_regions: &[ImageCoordinates],
+) -> String {
+    let mut merged = handwritten_text.trim().to_string();
+
+    for region in image_regions {
+        if !merged.contains(&region.lable) {
+            if !merged.is_empty() {
+                merged.push('\n');
+            }
+            merged.push_str(&region.lable);
+        }
+    }
+
+    merged
 }
 
 /*Selects the device to you, falls back to cpu if no CUDA or METAL devices found */

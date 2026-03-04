@@ -33,3 +33,25 @@ pub fn convert_pdf_to_image() -> Result<()>{
     });
     Ok(())
 }
+
+pub fn convert_single_pdf_to_image(pdf_path: &str) -> Result<()> {
+    let dir = "./data/images";
+    if !Path::new(dir).exists() {
+        fs::create_dir_all(dir)?;
+    }
+
+    let name = Path::new(pdf_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid PDF path: {pdf_path}"))?;
+
+    Command::new("pdftoppm")
+        .arg("-png")
+        .arg("-r").arg("200")
+        .arg(pdf_path)
+        .arg(format!("./data/images/{name}"))
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to convert to png {name}: {e}"))?;
+
+    Ok(())
+}

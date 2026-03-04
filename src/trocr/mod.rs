@@ -1,11 +1,9 @@
 use candle_core::{DType, Device, Tensor};
-use candle_examples::token_output_stream::TokenOutputStream;
 use candle_nn::VarBuilder;
 use candle_transformers::{generation, models::{trocr::{self, TrOCRConfig}, vit}};
 use image::DynamicImage;
 use tokenizers::Tokenizer;
 use anyhow::Result;
-use std::io::Write;
 
 use crate::{trocr::config_structs::ModelConfig};
 pub mod config_structs;
@@ -21,7 +19,7 @@ pub struct TrocrSwedishHandwritten{
 impl TrocrSwedishHandwritten {
     pub fn build_handwritten_trocr(device: &Device, dtype: DType) 
     -> Result<Self> {
-        let weights_path = "models/trocr/model.safetensors";
+        let weights_path = "models/troc/model.safetensors";
         let config = TrocrSwedishHandwritten::load_config()?;
 
         let encoder = config.encoder;
@@ -70,7 +68,7 @@ impl TrocrSwedishHandwritten {
 
         println!("Built model");
 
-        let mut model = trocr::TrOCRModel::new(&encoder_config, &decoder_config, vb)?;
+        let model = trocr::TrOCRModel::new(&encoder_config, &decoder_config, vb)?;
         Ok(Self{
             model,
             encoder_config,
@@ -78,12 +76,14 @@ impl TrocrSwedishHandwritten {
         })
     }
 
-    pub fn run_handwritten_trocr(mut self, images: Vec<DynamicImage>, device: &Device, dtype: DType) -> Result<()> {
+    pub fn run_handwritten_trocr(&mut self, images: Vec<DynamicImage>, device: &Device, dtype: DType) -> Result<String> {
         let pre_process_config = image_processor::PreProcessorConfig::default();
         let preprocessor = image_processor::VITImageProcessor::new(pre_process_config);
+        let mut tokenizer = TrocrSwedishHandwritten::get_tokenizer()?;
+        let mut lines = vec![];
 
         // Process each image (line) separately
-        for (img_idx, image) in images.into_iter().enumerate() {
+        for image in images.into_iter() {
             let single_image = vec![image];
             let processed_image = preprocessor.preprocess(single_image, device, dtype)?.to_device(device)?;
 
@@ -93,7 +93,6 @@ impl TrocrSwedishHandwritten {
             let mut logits_processor = generation::LogitsProcessor::new(1337, None, None);
 
             let mut token_ids: Vec<u32> = vec![self.decoder_config.decoder_start_token_id];
-            let mut tokenizer = TrocrSwedishHandwritten::get_tokenizer()?;
 
             /*This iterates to 1000 and force stops if an EOS token is never hit. 
             we shouldnt have more than 1000 tokens per line of text so this limit is still overkill */
@@ -118,38 +117,60 @@ impl TrocrSwedishHandwritten {
                 let logits = Tensor::from_vec(logits_vec, self.decoder_config.vocab_size, device)?;
                 let token = logits_processor.sample(&logits)?;
                 token_ids.push(token);
-                
-
-                if let Some(t) =  tokenizer.next_token(token)?{
-                    print!("{t}");
-                    let _ = std::io::stdout().flush();
-                }
 
                 if token == self.decoder_config.eos_token_id {
                     break;
                 }
             }   
 
-            if let Ok(Some(rest)) = tokenizer.decode_rest() {
-                print!("{rest}");
+            let decoded_ids: Vec<u32> = token_ids
+                .into_iter()
+                .filter(|&token| {
+                    token != self.decoder_config.decoder_start_token_id
+                    && token != self.decoder_config.eos_token_id
+                    && token != self.decoder_config.pad_token_id as u32
+                    && token != self.decoder_config.bos_token_id as u32
+                })
+                .collect();
+
+            let line = tokenizer
+                .decode(&decoded_ids, true)
+                .map_err(|e| anyhow::anyhow!("Tokenizer decode error: {e}"))?
+                .trim()
+                .to_string();
+
+            if !line.is_empty() {
+                lines.push(line);
             }
-            println!();
         }
 
-        Ok(())
+        Ok(lines.join("\n"))
     }
 
-    pub fn get_tokenizer() -> Result<TokenOutputStream>{
-        let path = "models/trocr/tokenizer.json";
+    #[cfg(feature = "opencv")]
+    pub fn transcribe_page(&mut self, page_path: &str, device: &Device, dtype: DType) -> Result<String> {
+        let image_names = line_segementation::line_segemenation(page_path)?;
+
+        let mut images = vec![];
+        for image_path in image_names {
+            let image = image::ImageReader::open(image_path)?.decode()?;
+            images.push(image);
+        }
+
+        self.run_handwritten_trocr(images, device, dtype)
+    }
+
+    pub fn get_tokenizer() -> Result<Tokenizer>{
+        let path = "models/troc/tokenizer.json";
 
         let tokenizer = Tokenizer::from_file(path)
         .map_err(|e| anyhow::anyhow!("Tokenizer error: {e}"))?;
 
-        Ok(TokenOutputStream::new(tokenizer))
+        Ok(tokenizer)
     }
 
     pub fn load_config() -> Result<ModelConfig> {
-        let config_path= "models/trocr/config.json";
+        let config_path= "models/troc/config.json";
         let config_str = std::fs::read_to_string(config_path)?;
         let model_config: ModelConfig = serde_json::from_str(&config_str)?;
 
