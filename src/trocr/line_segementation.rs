@@ -3,10 +3,13 @@ use std::fs;
 use anyhow::Result;
 use image::{DynamicImage, GenericImageView, GrayImage, Luma};
 
-pub fn line_segemenation(page: &str) -> Result<Vec<String>> {
+use crate::page_struct::Page;
+
+pub fn line_segemenation(page: &Page) -> Result<Vec<String>> {
     fs::create_dir_all("data/handwritten")?;
 
-    let original = image::open(page)?;
+    let path = &page.path;
+    let original = image::open(path)?;
     let gray = original.to_luma8();
     let binary = adaptive_threshold_like(&gray, 41, 5);
     let merged = dilate_binary(&binary, 1);
@@ -50,7 +53,7 @@ pub fn line_segemenation(page: &str) -> Result<Vec<String>> {
     let mut image_names = vec![];
     for (index, (y1, y2)) in lines.iter().enumerate() {
         let crop = crop_line(&original, *y1 as u32, *y2 as u32);
-        let name = format!("data/handwritten/line_{}.png", index);
+        let name = format!("data/handwritten/{}_line_{}.png", page.name, index);
         crop.save(&name)?;
         image_names.push(name);
     }

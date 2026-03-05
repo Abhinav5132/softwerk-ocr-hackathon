@@ -5,10 +5,9 @@ use image::DynamicImage;
 use tokenizers::Tokenizer;
 use anyhow::Result;
 
-use crate::{trocr::config_structs::ModelConfig};
+use crate::{page_struct::Page, trocr::config_structs::ModelConfig};
 pub mod config_structs;
 pub mod image_processor;
-#[cfg(feature = "opencv")]
 pub mod line_segementation;
 
 pub struct TrocrSwedishHandwritten{
@@ -147,9 +146,9 @@ impl TrocrSwedishHandwritten {
         Ok(lines.join("\n"))
     }
 
-    #[cfg(feature = "opencv")]
-    pub fn transcribe_page(&mut self, page_path: &str, device: &Device, dtype: DType) -> Result<String> {
-        let image_names = line_segementation::line_segemenation(page_path)?;
+
+    pub fn transcribe_page(&mut self, page: &Page, device: &Device, dtype: DType) -> Result<String> {
+        let image_names = line_segementation::line_segemenation(page)?;
 
         let mut images = vec![];
         for image_path in image_names {

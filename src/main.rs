@@ -1,20 +1,21 @@
 use std::time;
 use std::fs;
 use candle_core::{DType, Device};
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
 
 pub mod Light_on_ocr;
 pub mod trocr;
 pub mod moondream;
 pub mod pdf;
+use crate::page_struct::ProcessedOutput;
 use crate::pdf::convert_pdf_to_image;
 use crate::pdf::convert_single_pdf_to_image;
-
+use anyhow::Result;
 mod page_struct;
 use crate::page_struct::Page;
-#[cfg(feature = "opencv")]
-use crate::page_struct::ImageCoordinates;
 
-#[cfg(feature = "opencv")]
+use crate::page_struct::ImageCoordinates;
 const HANDWRITING_CONFIDENCE_THRESHOLD: f32 = 0.28;
 
 
@@ -22,29 +23,11 @@ const HANDWRITING_CONFIDENCE_THRESHOLD: f32 = 0.28;
 fn main() {
     let start_time = time::Instant::now();
     let device = select_device();
-    #[cfg(feature = "opencv")]
-    let dtype = candle_core::DType::F32;
+  
+    let trocr_dtype = candle_core::DType::F32;
     let mut unprocessed_outputs = vec![];
     let mut pages = load_pages_from_images_dir();
 
-    #[cfg(feature = "opencv")]
-    {
-        if !has_known_handwritten_page(&pages) {
-            if let Some(pdf_path) = find_known_handwritten_pdf_path() {
-                match convert_single_pdf_to_image(&pdf_path) {
-                    Ok(_) => {
-                        pages = load_pages_from_images_dir();
-                    }
-                    Err(e) => {
-                        dbg!(e);
-                        println!("Failed to convert known handwritten PDF: {}", pdf_path);
-                    }
-                }
-            } else {
-                println!("Known handwritten PDF not found in data/");
-            }
-        }
-    }
 
     if pages.is_empty() {
         match convert_pdf_to_image() {
@@ -82,33 +65,19 @@ fn main() {
         }
     }
 
-    #[cfg(feature = "opencv")]
     {
-        match trocr::TrocrSwedishHandwritten::build_handwritten_trocr(&device, dtype) {
+        match trocr::TrocrSwedishHandwritten::build_handwritten_trocr(&device, trocr_dtype) {
             Ok(mut trocr_model) => {
                 for output in unprocessed_outputs.iter_mut() {
-                    let force_handwritten = is_known_handwritten_page(&output.page.path);
-                    if force_handwritten || output.lighton_confidence < HANDWRITING_CONFIDENCE_THRESHOLD {
-                        match trocr_model.transcribe_page(&output.page.path, &device, dtype) {
-                            Ok(handwritten_text) => {
-                                let merged_text = merge_handwritten_with_placeholders(
-                                    &handwritten_text,
-                                    &output.image_regions,
-                                );
-                                if !merged_text.trim().is_empty() {
-                                    output.unprocessed_output = merged_text;
-                                }
-                                output.is_handwritten = true;
-                                if force_handwritten {
-                                    println!("Forced handwritten routing for {}", output.page.path);
-                                }
+                    if output.lighton_confidence > HANDWRITING_CONFIDENCE_THRESHOLD {
+                        match trocr_model.transcribe_page(&output.page, &device, trocr_dtype) {
+                            Ok(transcription) => {
+                                //Overwrite previous output 
+                                output.unprocessed_output = transcription;
                             }
                             Err(e) => {
                                 dbg!(e);
-                                println!(
-                                    "Failed handwritten transcription for page: {}",
-                                    output.page.path
-                                );
+                                println!("Failed to transcribe handwritten text, using original transcription instead.");
                             }
                         }
                     }
@@ -119,13 +88,6 @@ fn main() {
                 println!("Failed to build TroCR handwritten model");
             }
         }
-    }
-
-    #[cfg(not(feature = "opencv"))]
-    {
-        println!(
-            "OpenCV feature is disabled; skipping handwritten routing. Build with --features opencv to enable it."
-        );
     }
 
     let mut processed_outputs = vec![];
@@ -148,36 +110,17 @@ fn main() {
     let elapsed = start_time.elapsed().as_secs();
     println!("{elapsed}");
     
-
-
-    /*
-    let mut images = vec![];
-
-    let image_path = "data/images/akl-2017-02-27-AM-2017-1099-SA-Brev-till-KP.pdf-10.png";
-    let image_names = line_segemenation(image_path).unwrap();
-
-    for img_path in image_names {
-        let image = image::ImageReader::open(img_path).unwrap().decode().unwrap();
-        images.push(image);
-
-    }
-    
-    let trocr_swedish_model = 
-    TrocrSwedishHandwritten::build_handwritten_trocr(&device, dtype).unwrap();
-    
-    match trocr_swedish_model.run_handwritten_trocr(images, &device, dtype){
-        Ok(_) => {
-            println!("Transcription finished succesfully");
-        }
-        Err(e) => {
-            dbg!(e);
-        }
-    }*/
-
-    
+    let _ = export_output(processed_outputs);
 
 }
 
+pub fn export_output(processed_outputs: Vec<ProcessedOutput>) -> Result<()> {
+    processed_outputs.par_iter().for_each(|output| {
+        let output_path = format!("data/output/{}.txt", output.page.name);
+        let _ = fs::write(output_path, &output.processed_output);
+    });
+    Ok(())
+}
 fn load_pages_from_images_dir() -> Vec<Page> {
     let mut pages = vec![];
 
@@ -218,12 +161,11 @@ fn load_pages_from_images_dir() -> Vec<Page> {
     pages
 }
 
-#[cfg(feature = "opencv")]
+
 fn has_known_handwritten_page(pages: &[Page]) -> bool {
     pages.iter().any(|page| is_known_handwritten_page(&page.path))
 }
 
-#[cfg(feature = "opencv")]
 fn find_known_handwritten_pdf_path() -> Option<String> {
     let entries = fs::read_dir("data").ok()?;
 
@@ -246,14 +188,14 @@ fn find_known_handwritten_pdf_path() -> Option<String> {
     None
 }
 
-#[cfg(feature = "opencv")]
+
 fn is_known_handwritten_page(page_path: &str) -> bool {
     let lower = page_path.to_lowercase();
     lower.contains("pol-1986-03-03-granne-till-mårten-palme-röda-boken-förhör-mårten-palme-d-364")
         || lower.contains("pol-1986-03-03-granne-till-marten-palme-roda-boken-forhor-marten-palme-d-364")
 }
 
-#[cfg(feature = "opencv")]
+
 fn merge_handwritten_with_placeholders(
     handwritten_text: &str,
     image_regions: &[ImageCoordinates],
