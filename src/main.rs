@@ -7,7 +7,6 @@ pub mod trocr;
 pub mod moondream;
 pub mod pdf;
 use crate::pdf::convert_pdf_to_image;
-use crate::pdf::convert_single_pdf_to_image;
 
 mod page_struct;
 use crate::page_struct::Page;
@@ -26,25 +25,6 @@ fn main() {
     let dtype = candle_core::DType::F32;
     let mut unprocessed_outputs = vec![];
     let mut pages = load_pages_from_images_dir();
-
-    #[cfg(feature = "opencv")]
-    {
-        if !has_known_handwritten_page(&pages) {
-            if let Some(pdf_path) = find_known_handwritten_pdf_path() {
-                match convert_single_pdf_to_image(&pdf_path) {
-                    Ok(_) => {
-                        pages = load_pages_from_images_dir();
-                    }
-                    Err(e) => {
-                        dbg!(e);
-                        println!("Failed to convert known handwritten PDF: {}", pdf_path);
-                    }
-                }
-            } else {
-                println!("Known handwritten PDF not found in data/");
-            }
-        }
-    }
 
     if pages.is_empty() {
         match convert_pdf_to_image() {
@@ -87,8 +67,7 @@ fn main() {
         match trocr::TrocrSwedishHandwritten::build_handwritten_trocr(&device, dtype) {
             Ok(mut trocr_model) => {
                 for output in unprocessed_outputs.iter_mut() {
-                    let force_handwritten = is_known_handwritten_page(&output.page.path);
-                    if force_handwritten || output.lighton_confidence < HANDWRITING_CONFIDENCE_THRESHOLD {
+                    if should_use_handwritten_output(output.lighton_confidence, &output.unprocessed_output) {
                         match trocr_model.transcribe_page(&output.page.path, &device, dtype) {
                             Ok(handwritten_text) => {
                                 let merged_text = merge_handwritten_with_placeholders(
@@ -99,9 +78,6 @@ fn main() {
                                     output.unprocessed_output = merged_text;
                                 }
                                 output.is_handwritten = true;
-                                if force_handwritten {
-                                    println!("Forced handwritten routing for {}", output.page.path);
-                                }
                             }
                             Err(e) => {
                                 dbg!(e);
@@ -219,38 +195,21 @@ fn load_pages_from_images_dir() -> Vec<Page> {
 }
 
 #[cfg(feature = "opencv")]
-fn has_known_handwritten_page(pages: &[Page]) -> bool {
-    pages.iter().any(|page| is_known_handwritten_page(&page.path))
-}
-
-#[cfg(feature = "opencv")]
-fn find_known_handwritten_pdf_path() -> Option<String> {
-    let entries = fs::read_dir("data").ok()?;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-
-        let lower = file_name.to_lowercase();
-        if lower.contains("pol-1986-03-03") && lower.contains("d-364") {
-            return Some(path.to_string_lossy().to_string());
-        }
+fn should_use_handwritten_output(confidence: f32, text: &str) -> bool {
+    let non_ws_chars = text.chars().filter(|c| !c.is_whitespace()).count();
+    if non_ws_chars == 0 {
+        return true;
     }
 
-    None
-}
+    let alphabetic_chars = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && c.is_alphabetic())
+        .count();
+    let alpha_ratio = alphabetic_chars as f32 / non_ws_chars as f32;
 
-#[cfg(feature = "opencv")]
-fn is_known_handwritten_page(page_path: &str) -> bool {
-    let lower = page_path.to_lowercase();
-    lower.contains("pol-1986-03-03-granne-till-mårten-palme-röda-boken-förhör-mårten-palme-d-364")
-        || lower.contains("pol-1986-03-03-granne-till-marten-palme-roda-boken-forhor-marten-palme-d-364")
+    let handwriting_signal = 0.8 * (1.0 - confidence) + 0.2 * (1.0 - alpha_ratio);
+
+    handwriting_signal > 0.72 || confidence < HANDWRITING_CONFIDENCE_THRESHOLD
 }
 
 #[cfg(feature = "opencv")]
