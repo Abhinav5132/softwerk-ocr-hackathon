@@ -10,7 +10,6 @@ pub mod moondream;
 pub mod pdf;
 use crate::page_struct::ProcessedOutput;
 use crate::pdf::convert_pdf_to_image;
-use crate::pdf::convert_single_pdf_to_image;
 use anyhow::Result;
 mod page_struct;
 use crate::page_struct::Page;
@@ -22,6 +21,7 @@ const HANDWRITING_CONFIDENCE_THRESHOLD: f32 = 0.28;
 //TODO: IF AN IMAGE HAS HANDWRITING USE THE HANDWRITTEN MODEL, IF NOT USE THE OTHER MODEL. AND IMPROVE THE OUTPUT OF THE HANDWRITTEN MODEL. BY IMPROVEING LINE SEGEMENTATION AND IMAGE PREPROCESSING (THIKEN the characters).
 fn main() {
     let start_time = time::Instant::now();
+    println!("Started Execution");
     let device = select_device();
   
     let trocr_dtype = candle_core::DType::F32;
@@ -114,6 +114,7 @@ fn main() {
 
 }
 
+//TODO CHANGE THIS to save as markdown documents
 pub fn export_output(processed_outputs: Vec<ProcessedOutput>) -> Result<()> {
     processed_outputs.par_iter().for_each(|output| {
         let output_path = format!("data/output/{}.txt", output.page.name);
