@@ -61,4 +61,4 @@
 
 7. Output of the pipeline can be found in the output folder with each page being its own markdown document. Please use a mardown reader like obsidian or VsCode to read this. 
 
-**NOTE** Please clean the images directory before running again. 
+**NOTE** Please clean the images directory before running again. This should happen automatically but some files might remain.
