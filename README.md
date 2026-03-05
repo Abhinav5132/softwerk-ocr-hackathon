@@ -34,7 +34,7 @@
     docker compose build
     ```
 7. Create a new folder at projet root called data. Create two folders inside:
-    images, output. 
+    images, output. The pdfs to ocr should be in /data, not /data/pdf etc. 
     you should have the following file structure:
     
     ```
@@ -50,7 +50,7 @@
     └── data
         ├── images
         ├── output
-        ├── Pdf's to OCR
+        ├── <place pdfs to be ocr here>
         └── murderer.pdf
         
     ```
