@@ -18,7 +18,7 @@ pub struct TrocrSwedishHandwritten{
 impl TrocrSwedishHandwritten {
     pub fn build_handwritten_trocr(device: &Device, dtype: DType) 
     -> Result<Self> {
-        let weights_path = "models/troc/model.safetensors";
+        let weights_path = "models/trocr/model.safetensors";
         let config = TrocrSwedishHandwritten::load_config()?;
 
         let encoder = config.encoder;
