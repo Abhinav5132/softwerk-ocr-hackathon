@@ -1,0 +1,14 @@
+services:
+  ocr:
+    build:
+      context: .
+      args:
+        BUILD_TARGET: cuda
+        CUDA_TARGET: 86 
+    image: softwerk-ocr-hackathon
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ./data:/app/data
+      - ./data/output:/app/data/output

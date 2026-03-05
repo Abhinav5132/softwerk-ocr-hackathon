@@ -113,4 +113,8 @@ impl LightOnOCR {
     pub fn decode_step(&mut self, input_ids: &Tensor, offset: usize) -> Result<Tensor> {
         Ok(self.language_model.forward(input_ids, offset)?)
     }
+
+    pub fn clear_kv_cache(&mut self) {
+        self.language_model.clear_kv_cache();
+    }
 }

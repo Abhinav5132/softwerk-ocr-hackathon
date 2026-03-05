@@ -1,6 +1,7 @@
-use candle_core::{DType, Device, Tensor};
+use candle_core::{Device, Tensor};
 use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb};
 use anyhow::Result;
+use crate::get_dtype;
 
 const PATCH_SIZE: u32 = 14;
 const MERGE_SIZE: u32 = 2;
@@ -51,7 +52,7 @@ pub fn preprocess(img: &DynamicImage, device: &Device) -> Result<PreprocessedIma
 
     let pixel_values = Tensor::from_vec(data.clone(), (3, h, w), device)?
         .unsqueeze(0)?                   // (1, 3, H, W)
-        .to_dtype(DType::BF16)?;
+        .to_dtype(get_dtype(device))?;
 
     let ph = h / PATCH_SIZE as usize;
     let pw = w / PATCH_SIZE as usize;

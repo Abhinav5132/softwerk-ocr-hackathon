@@ -6,20 +6,34 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 pub fn convert_pdf_to_image() -> Result<()>{
     let dir = "./data/images";
 
-    if !Path::new(dir).exists() {
+    // Clean the images folder first before any conversions
+    if Path::new(dir).exists() {
+        println!("Cleaning images folder...");
+        let removed_count = fs::read_dir(dir)
+            .expect("failed to read images directory")
+            .filter_map(|entry| entry.ok())
+            .filter(|ent| ent.file_type().ok().map(|ft| ft.is_file()).unwrap_or(false))
+            .count();
+        
+        fs::read_dir(dir)
+            .expect("failed to read images directory")
+            .filter_map(|entry| entry.ok())
+            .filter(|ent| ent.file_type().ok().map(|ft| ft.is_file()).unwrap_or(false))
+            .for_each(|ent| {
+                if let Err(e) = fs::remove_file(ent.path()) {
+                    eprintln!("Warning: failed to remove file {:?}: {}", ent.path(), e);
+                }
+            });
+        println!("Removed {} files from images folder.", removed_count);
+    } else {
         fs::create_dir_all(dir).expect("failed to create dir");
-    } else{
-        fs::read_dir(dir).expect("failed to read images directory")
-        .map(|entry| entry.expect("failed to get dirEntry"))
-        .filter(|ent| ent.file_type().expect("unable to get file type").is_file())
-        .for_each(|ent| { fs::remove_file(ent.path()).expect("failed to remove file"); });
     }
 
     let paths: Vec<_> = fs::read_dir("./data")
         .expect("failed to read data directory")
-        .map(|ent| ent.expect("failed to get path"))
-        .filter(|ent| ent.file_type().expect("").is_file())
+        .filter_map(|ent| ent.ok())
         .map(|ent| ent.path())
+        .filter(|p| p.is_file())
         .collect();
 
     paths.into_par_iter().for_each(|path| {
@@ -31,5 +45,27 @@ pub fn convert_pdf_to_image() -> Result<()>{
             .arg(format!("./data/images/{name}"))
             .status().unwrap_or_else(|_| panic!("failed to convert to png {name}"));
     });
+    Ok(())
+}
+
+pub fn convert_single_pdf_to_image(pdf_path: &str) -> Result<()> {
+    let dir = "./data/images";
+    if !Path::new(dir).exists() {
+        fs::create_dir_all(dir)?;
+    }
+
+    let name = Path::new(pdf_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid PDF path: {pdf_path}"))?;
+
+    Command::new("pdftoppm")
+        .arg("-png")
+        .arg("-r").arg("200")
+        .arg(pdf_path)
+        .arg(format!("./data/images/{name}"))
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to convert to png {name}: {e}"))?;
+
     Ok(())
 }

@@ -1,6 +1,16 @@
-use candle_core::Device;
-use crate::{Light_on_ocr::{config_structs::ModelConfig, model::LightOnOCR}, page_struct::{ImageDimentions, UnprocessedOutput}, *};
-use anyhow::Result;
+use std::io::Write;
+
+use candle_core::{DType, Device, safetensors::load};
+use candle_nn::VarBuilder;
+use regex::Regex;
+use tokenizers::Tokenizer;
+
+use crate::{
+    Light_on_ocr::{config_structs::ModelConfig, model::LightOnOCR, preprocess::preprocess},
+    get_dtype,
+    page_struct::{ImageCoordinates, ImageDimentions, Page, UnprocessedOutput},
+};
+use anyhow::{Context, Result};
 
 const IM_START:   u32 = 151644; // <|im_start|>
 const IM_END:     u32 = 151645; // <|im_end|> — EOS token
@@ -39,6 +49,7 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
 
     let mut unpocessed_output: Vec<UnprocessedOutput> = vec![];
     for page in pages.iter(){
+        model.clear_kv_cache();
         let image_path = &page.path;
         let img = image::open(image_path)?;
         let image_dimentions = ImageDimentions{
@@ -104,14 +115,18 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
         )?;
 
         println!("Prefilling...");
-        let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0)?;
+        let logits = model.forward(&input_tensor, &preprocessed.pixel_values, 0).context("MODEL FORWARD FAIL")?;
         println!("logits shape: {:?}", logits.shape());
 
         let mut generated: Vec<u32> = Vec::new();
         let mut offset = seq_len;
 
-        let first_token = greedy(&logits)?;
+        let (first_token, first_confidence) = greedy(&logits)?;
         generated.push(first_token);
+        let mut token_confidences: Vec<f32> = vec![];
+        if first_token != IM_END {
+            token_confidences.push(first_confidence);
+        }
         println!("first token id={} decoded={:?}",
             first_token,
             tokenizer.decode(&[first_token], false));
@@ -132,11 +147,20 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
                 device,
             )?;
 
-            let logits = model.decode_step(&input, offset)?;
-            let token = greedy(&logits)?;
+            let logits = model.decode_step(&input, offset).context("DECODE STEP ERROR")?;
+            let (token, confidence) = greedy(&logits)?;
             generated.push(token);
+            if token != IM_END {
+                token_confidences.push(confidence);
+            }
             offset += 1;
         }
+
+        let lighton_confidence = if token_confidences.is_empty() {
+            0.0
+        } else {
+            token_confidences.iter().sum::<f32>() / token_confidences.len() as f32
+        };
 
         let decode_ids: Vec<u32> = generated.iter()
             .copied()
@@ -159,7 +183,8 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
             unprocessed_output: 
             output, 
             image_regions, 
-            is_handwritten: false // TODO Add a function to determine if its handwritten or not.
+            is_handwritten: false,
+            lighton_confidence
         }
         );
     }
@@ -167,11 +192,28 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
 }
 
 
-fn greedy(logits: &candle_core::Tensor) -> Result<u32> {
+fn greedy(logits: &candle_core::Tensor) -> Result<(u32, f32)> {
     let logits = logits.squeeze(0)?;
     let seq = logits.dim(0)?;
-    let last = logits.narrow(0, seq - 1, 1)?.squeeze(0)?;
-    Ok(last.argmax(candle_core::D::Minus1)?.to_scalar::<u32>()?)
+    let last = logits.narrow(0, seq - 1, 1)?.squeeze(0)?.to_dtype(DType::F32)?;
+    let logits_vec = last.to_vec1::<f32>()?;
+
+    let mut max_idx = 0usize;
+    let mut max_val = f32::NEG_INFINITY;
+    for (idx, value) in logits_vec.iter().enumerate() {
+        if *value > max_val {
+            max_val = *value;
+            max_idx = idx;
+        }
+    }
+
+    let mut exp_sum = 0f32;
+    for value in &logits_vec {
+        exp_sum += (*value - max_val).exp();
+    }
+    let top_probability = if exp_sum > 0.0 { 1.0 / exp_sum } else { 0.0 };
+
+    Ok((max_idx as u32, top_probability))
 }
 
 pub fn print_safetensors() -> Result<()> {
