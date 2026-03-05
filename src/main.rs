@@ -69,6 +69,7 @@ fn main() {
         }
     }
 
+    /*
     {
         match trocr::TrocrSwedishHandwritten::build_handwritten_trocr(&device, trocr_dtype) {
             Ok(mut trocr_model) => {
@@ -93,7 +94,7 @@ fn main() {
             }
         }
     }
-
+    */
     let mut processed_outputs = vec![];
     {
         if let Ok(pipeline) = moondream::build_model(&device){
@@ -121,7 +122,7 @@ fn main() {
 //TODO CHANGE THIS to save as markdown documents
 pub fn export_output(processed_outputs: Vec<ProcessedOutput>) -> Result<()> {
     processed_outputs.par_iter().for_each(|output| {
-        let output_path = format!("data/output/{}.txt", output.page.name);
+        let output_path = format!("data/output/{}.md", output.page.name);
         let _ = fs::write(output_path, &output.processed_output);
     });
     Ok(())
