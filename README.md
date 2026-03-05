@@ -50,8 +50,9 @@
     └── data
         ├── images
         ├── output
+        ├── Pdf's to OCR
         └── murderer.pdf
-    
+        
     ```
 
 6. Run the container: 
