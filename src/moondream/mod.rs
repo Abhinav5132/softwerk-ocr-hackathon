@@ -105,22 +105,38 @@ pub fn extract_image(
 
 /* Builds the prompt to be used by moondream1 */
 pub fn build_prompt(context: &str) -> String {
-    match context {
-        ctx if !ctx.trim().is_empty() => format!(
-            "\n\nQuestion: You are assisting in transcribing analytical evidence from historical documents.
-            This image was found embedded in an official document. 
-            The surrounding text in the document reads: \"{}\".
-            Based on this context, provide a detailed forensic description of the image.
-            Describe all visible people, objects, locations.
-            \n\nAnswer:",
-            ctx.chars().take(300).collect::<String>()
-        ),
-        _ => String::from(
-            "\n\nQuestion: You are assisting in transcribing analytical evidence from historical documents.
-            This image was found embedded in an official document.
-            Provide a detailed forensic description of the image.
-            Describe all visible people, objects, locations.
-            \n\nAnswer:"
-        ),
+    let mut ctx = context.trim();
+    if ctx.is_empty() {
+        ctx = "No surrounding text content found.";
     }
+    return format!(
+"\n\nQuestion: You are an expert forensic document and image analyzer. Your task is to perform precise Optical Character Recognition (OCR) and detailed visual analysis on the provided case file image.
+
+You will be provided with the text surrounding this image for context. Use this context to inform your analysis, but do not hallucinate details that are not visible in the image.
+
+Surrounding Text Context:
+{}
+
+Analyze the image and output your findings EXACTLY in the following XML format. Do not include conversational filler. If a section is not applicable or not visible, write ‘None detected’.
+
+<extracted_text>
+[Transcribe all visible text in the image exactly as written, preserving line breaks, typos, and capitalization. Differentiate between handwritten and printed text if possible.]
+</extracted_text>
+
+<people_and_subjects>
+[Describe all visible persons. Include estimated age, sex, clothing, distinct physical features, facial expressions, and physical positioning/actions.]
+</people_and_subjects>
+
+<objects_and_evidence>
+[List and describe all distinct objects. Include colors, makes/models, conditions (e.g., damaged, pristine), and spatial relationships to other objects.]
+</objects_and_evidence>
+
+<location_and_environment>
+[Describe the setting. Note indoor/outdoor, lighting conditions, weather, architectural details, and any identifiable signage or landmarks.]
+</location_and_environment>
+
+<forensic_anomalies_and_metadata>
+[Describe anything else of investigative value. This includes timestamps, logos, official stamps, signatures, watermarks, damage to the physical document/photograph (e.g., tears, stains), or inconsistencies.]
+</forensic_anomalies_and_metadata>
+\n\nAnswer:", ctx.chars().take(300).collect::<String>());
 }
