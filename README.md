@@ -17,7 +17,7 @@
     ```
     The command returns a number eg: 8.6 remove the . and change CUDA_TARGET in the docker compose file to this number.
 
-    Look for the GPU name in the following table, then cross reference:
+    Or Look for the GPU name in the following table, then cross reference:
 
     | GPU | Compute Cap |
     |---|---|
