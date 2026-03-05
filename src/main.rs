@@ -43,6 +43,10 @@ fn main() {
 
     if pages.is_empty() {
         println!("No pages found in data/images");
+        println!("Please either:");
+        println!("  1. Mount a volume with PDFs: docker run -v /path/to/pdfs:/app/data ...");
+        println!("  2. Or place PDF files in the data/ directory before building");
+        println!("  3. Or place pre-converted PNG/JPG images in data/images/");
         return;
     }
     // the { } ensure the model goes out of memory once its finished transcribing. We dont want multiple models loaded in memeory at the same time

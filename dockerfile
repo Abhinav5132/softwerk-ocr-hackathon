@@ -57,6 +57,11 @@ WORKDIR /app
 
 COPY --from=model-downloader /models ./models
 COPY --from=builder /usr/local/bin/softwerk-ocr-hackathon ./softwerk-ocr-hackathon
+COPY --from=builder /app/data ./data
+
+# Ensure output directory exists
+RUN mkdir -p /app/data/output
+
 CMD ["./softwerk-ocr-hackathon"]
 
 FROM runtime-${BUILD_TARGET}
