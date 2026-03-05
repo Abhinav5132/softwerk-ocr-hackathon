@@ -49,6 +49,7 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
 
     let mut unpocessed_output: Vec<UnprocessedOutput> = vec![];
     for page in pages.iter(){
+        model.clear_kv_cache();
         let image_path = &page.path;
         let img = image::open(image_path)?;
         let image_dimentions = ImageDimentions{
