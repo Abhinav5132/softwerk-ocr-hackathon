@@ -8,6 +8,13 @@ pub fn convert_pdf_to_image() -> Result<()>{
 
     // Clean the images folder first before any conversions
     if Path::new(dir).exists() {
+        println!("Cleaning images folder...");
+        let removed_count = fs::read_dir(dir)
+            .expect("failed to read images directory")
+            .filter_map(|entry| entry.ok())
+            .filter(|ent| ent.file_type().ok().map(|ft| ft.is_file()).unwrap_or(false))
+            .count();
+        
         fs::read_dir(dir)
             .expect("failed to read images directory")
             .filter_map(|entry| entry.ok())
@@ -17,6 +24,7 @@ pub fn convert_pdf_to_image() -> Result<()>{
                     eprintln!("Warning: failed to remove file {:?}: {}", ent.path(), e);
                 }
             });
+        println!("Removed {} files from images folder.", removed_count);
     } else {
         fs::create_dir_all(dir).expect("failed to create dir");
     }

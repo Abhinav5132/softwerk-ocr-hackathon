@@ -26,7 +26,7 @@ fn main() {
   
     let trocr_dtype = candle_core::DType::F32;
     let mut unprocessed_outputs = vec![];
-    let mut pages = load_pages_from_images_dir();
+    let mut pages = vec![];
 
 
     if pages.is_empty() {
