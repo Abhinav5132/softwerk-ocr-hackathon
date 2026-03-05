@@ -160,7 +160,7 @@ impl TrocrSwedishHandwritten {
     }
 
     pub fn get_tokenizer() -> Result<Tokenizer>{
-        let path = "models/troc/tokenizer.json";
+        let path = "models/trocr/tokenizer.json";
 
         let tokenizer = Tokenizer::from_file(path)
         .map_err(|e| anyhow::anyhow!("Tokenizer error: {e}"))?;
@@ -169,7 +169,7 @@ impl TrocrSwedishHandwritten {
     }
 
     pub fn load_config() -> Result<ModelConfig> {
-        let config_path= "models/troc/config.json";
+        let config_path= "models/trocr/config.json";
         let config_str = std::fs::read_to_string(config_path)?;
         let model_config: ModelConfig = serde_json::from_str(&config_str)?;
 
