@@ -23,6 +23,7 @@ pub fn preprocess(img: &DynamicImage, device: &Device) -> Result<PreprocessedIma
     let new_w = (orig_w as f32 * scale).round() as u32;
     let new_h = (orig_h as f32 * scale).round() as u32;
     let img = img.resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3);
+    
     let pad_w = new_w.div_ceil(TILE_SIZE) * TILE_SIZE;
     let pad_h = new_h.div_ceil(TILE_SIZE) * TILE_SIZE;
     let mut padded = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(pad_w, pad_h);

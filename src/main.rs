@@ -8,6 +8,7 @@ pub mod Light_on_ocr;
 pub mod trocr;
 pub mod moondream;
 pub mod pdf;
+use crate::Light_on_ocr::model_functions::print_safetensors;
 use crate::page_struct::ProcessedOutput;
 use crate::pdf::convert_pdf_to_image;
 use anyhow::Result;

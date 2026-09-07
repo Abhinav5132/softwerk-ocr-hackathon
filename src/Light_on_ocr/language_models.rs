@@ -69,7 +69,7 @@ impl Qwen3MLP {
             gate_proj: linear_no_bias(cfg.hidden_size, cfg.intermediate_size, vb.pp("gate_proj"))?,
             up_proj: linear_no_bias(cfg.hidden_size, cfg.intermediate_size, vb.pp("up_proj"))?,
             down_proj: linear_no_bias(cfg.intermediate_size, cfg.hidden_size, vb.pp("down_proj"))?,
-            act_fn: cfg.get_activation(),
+            act_fn: cfg.hidden_act,
         })
     }
 }

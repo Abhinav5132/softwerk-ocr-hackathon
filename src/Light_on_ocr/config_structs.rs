@@ -1,3 +1,4 @@
+use candle_core::DType;
 use candle_nn::Activation;
 use serde::Deserialize;
 
@@ -10,14 +11,13 @@ pub struct ModelConfig {
     pub model_type: String,
     pub multimodal_projector_bias: bool,
     pub pad_token_id: usize,
-    pub projector_hidden_act: String,
+    pub projector_hidden_act: Activation,
     pub spatial_merge_size: usize,
     pub text_config: TextConfig,
     pub transformers_version: String,
     pub use_cache: bool,
     pub vision_config: VisionConfig,
     pub vision_feature_layer: i32
-  
 }
 
 #[derive(Deserialize)]
@@ -27,7 +27,7 @@ pub struct TextConfig{
     pub attention_dropout: usize,
     pub dtype: String,
     pub head_dim: usize,
-    pub hidden_act: String,
+    pub hidden_act: Activation,
     pub hidden_size: usize,
     pub initializer_range: f32,
     pub intermediate_size: usize,
@@ -49,11 +49,6 @@ pub struct TextConfig{
     pub use_qk_norm: bool
 }
 
-impl TextConfig {
-    pub fn get_activation(&self) -> Activation {
-        Activation::Silu 
-    }
-}
 
 #[derive(Deserialize)]
 pub struct RopeParameters {

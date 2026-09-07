@@ -79,14 +79,8 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
         let user_tokens      = encode("user\n")?;
         let assistant_tokens = encode("assistant\n")?;
         let newline_tokens   = encode("\n")?;
-        let prompt = encode("describe this image\n")?;
 
         let mut image_tokens: Vec<u32> = vec![IMAGE_PAD; num_image_tokens];
-
-        // Full prompt:
-        // <|im_start|>system<|im_end|>\n
-        // <|im_start|>user\n[image tokens]<|im_end|>\n
-        // <|im_start|>assistant\n
         let mut input_ids: Vec<u32> = Vec::new();
 
         input_ids.push(IM_START);
@@ -97,7 +91,6 @@ pub fn run_model(mut model: LightOnOCR, tokenizer: Tokenizer, device: &Device, p
         input_ids.push(IM_START);
         input_ids.extend_from_slice(&user_tokens);
         input_ids.extend_from_slice(&image_tokens);
-        input_ids.extend_from_slice(&prompt);
         input_ids.push(IM_END);
         input_ids.extend_from_slice(&newline_tokens);
 
@@ -217,7 +210,7 @@ fn greedy(logits: &candle_core::Tensor) -> Result<(u32, f32)> {
 }
 
 pub fn print_safetensors() -> Result<()> {
-    let tensor1 = "models/moondream/model.safetensors";
+    let tensor1 = "models/LightOnOCR/model.safetensors";
     
     let tensors = load(tensor1, &candle_core::Device::Cpu)?;
 
